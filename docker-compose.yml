@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: zikkaron-postgres
+    environment:
+      POSTGRES_USER: zikkaron
+      POSTGRES_PASSWORD: zikkaron
+      POSTGRES_DB: zikkaron
+    ports:
+      - "5432:5432"
+    volumes:
+      - zikkaron_pg:/var/lib/postgresql/data
+      - ./backend/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zikkaron -d zikkaron"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ipfs:
+    image: ipfs/kubo:v0.29.0
+    container_name: zikkaron-ipfs
+    ports:
+      - "5001:5001"
+      - "8080:8080"
+    volumes:
+      - zikkaron_ipfs:/data/ipfs
+
+volumes:
+  zikkaron_pg:
+  zikkaron_ipfs:

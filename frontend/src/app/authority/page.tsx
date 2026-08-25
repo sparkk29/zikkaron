@@ -1,0 +1,191 @@
+"use client";
+
+import { FormEvent, useState } from "react";
+import { api } from "@/lib/api";
+import { useWallet } from "@/lib/wallet";
+
+export default function AuthorityPage() {
+  const { address, connect } = useWallet();
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<any[]>([]);
+  const [caseData, setCaseData] = useState<any>(null);
+  const [caseRef, setCaseRef] = useState("");
+  const [msg, setMsg] = useState("");
+  const [exportId, setExportId] = useState<string | null>(null);
+
+  async function search(e: FormEvent) {
+    e.preventDefault();
+    if (!address) return connect();
+    setMsg("");
+    try {
+      const data = await api<{ results: any[]; notice: string }>(
+        `/api/authority/search?q=${encodeURIComponent(q)}`,
+        { wallet: address }
+      );
+      setResults(data.results);
+      setMsg(data.notice);
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Failed");
+    }
+  }
+
+  async function openCase(propertyId: string) {
+    if (!address) return connect();
+    const data = await api(`/api/authority/case/${propertyId}`, { wallet: address });
+    setCaseData(data);
+  }
+
+  async function exportPack() {
+    if (!address || !caseData) return;
+    try {
+      const res = await api<any>("/api/authority/exports", {
+        method: "POST",
+        wallet: address,
+        body: {
+          propertyId: caseData.property.id,
+          caseRefPlaceholder: caseRef || undefined,
+          authorityUseAcknowledged: true,
+        },
+      });
+      setExportId(res.export.id);
+      setMsg(`${res.export.watermark}\n${res.note}`);
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Failed");
+    }
+  }
+
+  async function acknowledge() {
+    if (!address || !caseData) return;
+    try {
+      const res = await api<any>("/api/authority/acknowledge", {
+        method: "POST",
+        wallet: address,
+        body: {
+          propertyId: caseData.property.id,
+          exportId: exportId || undefined,
+          note: "Simulated agency acknowledgment of receipt",
+        },
+      });
+      setMsg(res.note);
+      await openCase(caseData.property.id);
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Failed");
+    }
+  }
+
+  return (
+    <section>
+      <h1>Authority Console</h1>
+      <p className="muted">
+        Read-only case support for demo authority_officer accounts. Designed for collaboration
+        with government and law enforcement. <strong>Not an official government system.</strong>{" "}
+        No seals, badges, or “verified by FBI” chrome.
+      </p>
+      <div className="warn-box">
+        MVP authority access is demo-only — not accredited LE access control, not CJIS / FedRAMP
+        certified. Handle exports under agency policy.
+      </div>
+
+      <form className="panel" onSubmit={search}>
+        <label className="label">Search address / APN / property id</label>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="100 Memorial Way or APN" />
+        <button className="btn accent" type="submit">
+          Search
+        </button>
+      </form>
+
+      <div className="grid">
+        {results.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            className="panel"
+            style={{ textAlign: "left", cursor: "pointer" }}
+            onClick={() => openCase(p.id)}
+          >
+            <strong>{p.addressLine1}</strong>
+            <div className="muted">
+              {p.city}, {p.state} · APN {p.apn}
+            </div>
+            <span className="tag">{p.occupancyStatus}</span>
+          </button>
+        ))}
+      </div>
+
+      {caseData && (
+        <>
+          <div className="panel">
+            <h3>Case view</h3>
+            <p>
+              Owner wallet: <code>{caseData.owner.wallet}</code>
+            </p>
+            <p className="muted">
+              KYC {caseData.owner.kycVerified ? "verified" : "unverified"} · fraud risk{" "}
+              {caseData.owner.fraudRiskLevel || "n/a"} · hash {caseData.owner.kycHash || "—"}
+            </p>
+            <h4>Authorized occupants</h4>
+            <ul>
+              {caseData.authorizedOccupants?.map((o: any) => (
+                <li key={o.id}>{o.occupant_name}</li>
+              ))}
+            </ul>
+            <h4>Open disputes</h4>
+            <ul>
+              {caseData.openDisputes?.length ? (
+                caseData.openDisputes.map((d: any) => <li key={d.id}>{d.reason}</li>)
+              ) : (
+                <li className="muted">None</li>
+              )}
+            </ul>
+            <h4>Incident timeline</h4>
+            <ul className="timeline">
+              {caseData.incidentTimeline?.map((ev: any) => (
+                <li key={ev.id}>
+                  <strong>{ev.event_type}</strong>
+                  <div className="muted">{new Date(ev.created_at).toLocaleString()}</div>
+                  <div>{ev.note}</div>
+                  {ev.evidence_cid && <div className="muted">Evidence CID {ev.evidence_cid}</div>}
+                </li>
+              ))}
+            </ul>
+            <h4>Legal record placeholders</h4>
+            <ul>
+              {caseData.legalRecordPlaceholders?.map((lr: any) => (
+                <li key={lr.id}>
+                  official={String(lr.is_official_county_record)} · {lr.document_cid}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="panel">
+            <h3>Authority Case Pack</h3>
+            <label className="label">Case ref placeholder</label>
+            <input
+              value={caseRef}
+              onChange={(e) => setCaseRef(e.target.value)}
+              placeholder="DEMO-CASE-42"
+            />
+            <label style={{ display: "flex", gap: "0.5rem", marginBottom: "0.85rem" }}>
+              <input type="checkbox" required defaultChecked />
+              <span className="muted">
+                authorityUseAcknowledged — for official investigation / case support; handle under
+                agency policy.
+              </span>
+            </label>
+            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+              <button className="btn accent" type="button" onClick={exportPack}>
+                Download / log case pack
+              </button>
+              <button className="btn secondary" type="button" onClick={acknowledge}>
+                Acknowledge receipt (simulated)
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {msg && <pre className="panel muted" style={{ whiteSpace: "pre-wrap" }}>{msg}</pre>}
+    </section>
+  );
+}

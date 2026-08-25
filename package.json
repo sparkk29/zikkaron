@@ -1,0 +1,23 @@
+{
+  "name": "zikkaron",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Zikkaron — US civic memorial layer assisting owners and authorities against squatters and property fraud",
+  "workspaces": [
+    "contracts",
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "contracts:compile": "npm run compile -w zikkaron-contracts",
+    "contracts:test": "npm run test -w zikkaron-contracts",
+    "backend:dev": "npm run dev -w zikkaron-backend",
+    "backend:test": "npm run test -w zikkaron-backend",
+    "frontend:dev": "npm run dev -w zikkaron-frontend",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
