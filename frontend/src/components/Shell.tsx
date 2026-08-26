@@ -16,7 +16,7 @@ export function Banner() {
 }
 
 export function Nav() {
-  const { address, connect, disconnect, connecting } = useWallet();
+  const { address, connect, disconnect, connecting, authenticated } = useWallet();
   return (
     <nav className="nav">
       <Link href="/" className="brand">
@@ -33,12 +33,13 @@ export function Nav() {
         <Link href="/admin">Admin</Link>
         <Link href="/legal">Legal</Link>
         {address ? (
-          <button className="btn secondary" type="button" onClick={disconnect}>
+          <button className="btn secondary" type="button" onClick={() => disconnect()}>
+            {authenticated ? "SIWE · " : ""}
             {address.slice(0, 6)}…{address.slice(-4)}
           </button>
         ) : (
           <button className="btn" type="button" onClick={connect} disabled={connecting}>
-            {connecting ? "Connecting…" : "Connect MetaMask"}
+            {connecting ? "Signing in…" : "Connect + SIWE"}
           </button>
         )}
       </div>

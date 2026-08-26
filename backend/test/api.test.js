@@ -1,5 +1,7 @@
-const { describe, it, before, after } = require("node:test");
+const { describe, it, before } = require("node:test");
 const assert = require("node:assert/strict");
+const { Wallet } = require("ethers");
+const { SiweMessage } = require("siwe");
 
 const BASE = process.env.API_URL || "http://127.0.0.1:4000";
 const OWNER = "0x1111111111111111111111111111111111111111";
@@ -7,18 +9,72 @@ const AUTHORITY = "0x2222222222222222222222222222222222222222";
 const BUYER = "0x3333333333333333333333333333333333333333";
 const ADMIN = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-async function api(path, { method = "GET", wallet, body } = {}) {
+async function api(path, { method = "GET", wallet, token, body } = {}) {
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers: {
       "Content-Type": "application/json",
-      ...(wallet ? { "x-wallet-address": wallet } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(!token && wallet ? { "x-wallet-address": wallet } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
   return { status: res.status, data };
 }
+
+describe("Zikkaron SIWE auth", { timeout: 30000 }, () => {
+  let healthOk = false;
+
+  before(async () => {
+    try {
+      const h = await api("/health");
+      healthOk = h.status === 200 && h.data.product === "Zikkaron";
+    } catch {
+      healthOk = false;
+    }
+  });
+
+  it("issues nonce, verifies SIWE signature, and serves session", async () => {
+    if (!healthOk) return;
+    const wallet = Wallet.createRandom();
+    const address = wallet.address.toLowerCase();
+
+    const nonceRes = await api(`/api/auth/nonce?address=${address}`);
+    assert.equal(nonceRes.status, 200, JSON.stringify(nonceRes.data));
+    assert.ok(nonceRes.data.nonce);
+
+    const message = new SiweMessage({
+      domain: nonceRes.data.domain,
+      address: wallet.address,
+      statement: nonceRes.data.statement,
+      uri: nonceRes.data.uri,
+      version: "1",
+      chainId: nonceRes.data.chainId,
+      nonce: nonceRes.data.nonce,
+    });
+    const prepared = message.prepareMessage();
+    const signature = await wallet.signMessage(prepared);
+
+    const verify = await api("/api/auth/verify", {
+      method: "POST",
+      body: { message: prepared, signature },
+    });
+    assert.equal(verify.status, 200, JSON.stringify(verify.data));
+    assert.ok(verify.data.token);
+    assert.equal(verify.data.wallet, address);
+
+    const session = await api("/api/auth/session", { token: verify.data.token });
+    assert.equal(session.status, 200);
+    assert.equal(session.data.wallet, address);
+
+    const logout = await api("/api/auth/logout", {
+      method: "POST",
+      token: verify.data.token,
+    });
+    assert.equal(logout.status, 200);
+  });
+});
 
 describe("Zikkaron backend happy paths", { timeout: 30000 }, () => {
   let propertyId;
@@ -39,6 +95,7 @@ describe("Zikkaron backend happy paths", { timeout: 30000 }, () => {
     assert.equal(status, 200);
     assert.equal(data.product, "Zikkaron");
     assert.equal(data.country, "US");
+    assert.equal(data.auth.siwe, true);
   });
 
   it("registers KYC hashes for owner, admin, authority", async () => {

@@ -4,8 +4,9 @@ Zikkaron is assistive memorial software. These limits are intentional disclosure
 
 ## Access & auth
 
-- **`x-wallet-address` is spoofable.** Demo-only. Future: SIWE + authority SSO / agency IdP.
-- **Authority access is not accredited LE access control.** Any wallet registered as `authority_officer` can use the console in MVP.
+- **Primary auth is SIWE (Sign-In with Ethereum)** with server-side sessions (`Authorization: Bearer`).
+- **`x-wallet-address` remains available only when `ALLOW_HEADER_AUTH=true`** (local/tests). It is spoofable — disable in shared environments.
+- **Authority access is not accredited LE access control.** Agency SSO (OIDC/SAML) is Phase 2.
 - **Not CJIS / FedRAMP / state security certified.**
 
 ## Evidence & documents

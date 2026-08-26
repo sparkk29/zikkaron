@@ -11,6 +11,7 @@ const occupancy = require("./routes/occupancy");
 const authority = require("./routes/authority");
 const deals = require("./routes/deals");
 const admin = require("./routes/admin");
+const auth = require("./routes/auth");
 
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
@@ -19,7 +20,7 @@ app.use(helmet());
 app.use(
   cors({
     origin: process.env.CORS_ORIGIN || "http://localhost:3000",
-    allowedHeaders: ["Content-Type", "x-wallet-address"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-wallet-address"],
   })
 );
 app.use(express.json({ limit: "1mb" }));
@@ -32,9 +33,14 @@ app.get("/health", (_req, res) => {
     tagline: "A memorial layer that works with authorities — not instead of them.",
     notice:
       "Designed for collaboration with government and law enforcement. Not an official government system.",
+    auth: {
+      siwe: true,
+      headerFallback: process.env.ALLOW_HEADER_AUTH === "true",
+    },
   });
 });
 
+app.use("/api/auth", auth);
 app.use("/api/users", users);
 app.use("/api/properties", properties);
 app.use("/api/occupancy", occupancy);

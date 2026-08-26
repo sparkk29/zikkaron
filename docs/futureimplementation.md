@@ -13,7 +13,9 @@
 
 - Owner-initiated share links with expiry and purpose limitation.
 - Privacy-preserving repeat-fraud pattern flags (wallet/APN clusters) for AG / consumer protection.
-- SIWE session auth; hardware key options for high-value owners.
+- ~~SIWE session auth~~ (Phase 1 shipped); hardware key options for high-value owners.
+- Agency SSO (SAML/OIDC) for `authority_officer` (Phase 2).
+- County recorder / assessor API adapters (Phase 3).
 - On-chain `AuthorityAck` events (optional; MVP is off-chain).
 - Production UUPS proxy deploys + formal audit.
 - Real IPFS pinning SLAs; document malware scanning.

@@ -1,16 +1,39 @@
 /**
- * Demo-only wallet auth via x-wallet-address header.
- * Spoofable — future: SIWE + authority SSO. Documented in docs/flaw.md.
+ * Auth middleware: prefer SIWE Bearer session; optional demo header fallback.
+ * Header auth is spoofable — only when ALLOW_HEADER_AUTH=true (local/tests).
  */
+const { getSessionByToken, extractBearer } = require("../services/siweAuth");
+
 async function requireWallet(req, res, next) {
-  const wallet = (req.header("x-wallet-address") || "").trim().toLowerCase();
-  if (!/^0x[a-f0-9]{40}$/.test(wallet)) {
+  try {
+    const token = extractBearer(req);
+    if (token) {
+      const session = await getSessionByToken(token);
+      if (!session) {
+        return res.status(401).json({ error: "Invalid or expired session" });
+      }
+      req.wallet = session.wallet_address.toLowerCase();
+      req.session = session;
+      req.authMethod = session.auth_method;
+      return next();
+    }
+
+    const allowHeader = process.env.ALLOW_HEADER_AUTH === "true";
+    const wallet = (req.header("x-wallet-address") || "").trim().toLowerCase();
+    if (allowHeader && /^0x[a-f0-9]{40}$/.test(wallet)) {
+      req.wallet = wallet;
+      req.authMethod = "header_fallback";
+      return next();
+    }
+
     return res.status(401).json({
-      error: "Missing or invalid x-wallet-address header (demo auth only)",
+      error: allowHeader
+        ? "Missing Authorization Bearer session or x-wallet-address"
+        : "Missing Authorization Bearer session — connect with SIWE (Sign-In with Ethereum)",
     });
+  } catch (err) {
+    next(err);
   }
-  req.wallet = wallet;
-  next();
 }
 
 function requireRole(...roles) {
