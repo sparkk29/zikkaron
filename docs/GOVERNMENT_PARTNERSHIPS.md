@@ -65,8 +65,19 @@ Live OIDC/SAML federation is **out of MVP** until certificates, client secrets, 
 ## Integration stubs (`government_api_queue`)
 
 - `ofac_screen_placeholder`
-- `county_record_lookup`
-- `assessor_apn_lookup`
+- `county_record_lookup` → **Phase 3 adapter** (`simulated` or `http` via `GOV_LOOKUP_ADAPTER`)
+- `assessor_apn_lookup` → **Phase 3 adapter**
 - `erecording_submit_placeholder`
 - `le_case_share_placeholder`
 - `agency_mou_placeholder`
+
+### Lookup adapter API
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/lookups/adapter` | Active adapter name/mode |
+| `POST /api/lookups/run/:propertyId` | Run county + assessor lookups for a property |
+| `POST /api/lookups/process-queue` | Drain queued county/APN jobs |
+| `POST /api/lookups/adhoc` | Ad-hoc APN/instrument assistive check |
+
+Results land in `government_lookup_results` with explicit disclaimers — **not** official county extracts.

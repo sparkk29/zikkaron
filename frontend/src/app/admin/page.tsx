@@ -9,6 +9,7 @@ export default function AdminPage() {
   const [jobs, setJobs] = useState<any[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
   const [verifyWallet, setVerifyWallet] = useState("");
+  const [adapter, setAdapter] = useState<string>("");
   const [msg, setMsg] = useState("");
 
   async function load() {
@@ -16,9 +17,11 @@ export default function AdminPage() {
     try {
       const q = await api<{ jobs: any[] }>("/api/admin/queue", { wallet: address });
       setJobs(q.jobs);
+      const a = await api<{ adapter: string; mode: string }>("/api/lookups/adapter");
+      setAdapter(`${a.adapter} (mode=${a.mode})`);
       try {
-        const a = await api<{ logs: any[] }>("/api/admin/audit", { wallet: address });
-        setLogs(a.logs);
+        const audit = await api<{ logs: any[] }>("/api/admin/audit", { wallet: address });
+        setLogs(audit.logs);
       } catch {
         /* authority can see queue; audit is admin-only */
       }
@@ -42,12 +45,26 @@ export default function AdminPage() {
     }
   }
 
+  async function processLookups() {
+    if (!address) return connect();
+    try {
+      const res = await api<{ processed: any[]; adapter: string }>("/api/lookups/process-queue", {
+        method: "POST",
+        wallet: address,
+        body: { limit: 50 },
+      });
+      setMsg(`Processed ${res.processed.length} lookup jobs via ${res.adapter}`);
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Failed");
+    }
+  }
+
   return (
     <section>
       <h1>Admin</h1>
       <p className="muted">
-        Soft KYC verify, government_api_queue stubs, and audit logs. Partnership integrations are
-        placeholders only.
+        Soft KYC verify, government_api_queue, county/APN lookup adapters, and audit logs.
       </p>
       {!address && (
         <button className="btn" type="button" onClick={connect}>
@@ -63,6 +80,13 @@ export default function AdminPage() {
         />
         <button className="btn accent" type="button" onClick={verify}>
           Mark verified
+        </button>
+      </div>
+      <div className="panel">
+        <h3>County / assessor lookup adapter</h3>
+        <p className="muted">Active: {adapter || "…"}</p>
+        <button className="btn secondary" type="button" onClick={processLookups}>
+          Process queued lookups
         </button>
       </div>
       <div className="panel">

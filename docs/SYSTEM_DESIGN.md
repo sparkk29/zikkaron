@@ -40,6 +40,14 @@ NatSpec on all modules: assists owners and authorities; not title; not eviction;
 2. Export → `authority_case_exports` + watermark + `le_case_share_placeholder`  
 3. Acknowledge → `authority_acknowledgements` + `agency_ack_received` event  
 
+## Auth & government adapters (phased)
+
+| Phase | Capability |
+|-------|------------|
+| 1 | SIWE Bearer sessions (`/api/auth/*`) |
+| 2 | Agency SSO stubs (`/api/auth/sso/*`) |
+| 3 | County/assessor lookup adapters (`/api/lookups/*`, `GOV_LOOKUP_ADAPTER`) |
+
 ## Security controls in MVP
 
 Roles including `authority_officer`, export logging, disclaimers, hashes-only PII, PossessionMemorial, dispute warnings, default unofficial county records.

@@ -114,13 +114,22 @@ router.post("/", requireWallet, async (req, res, next) => {
         propertyId: property.id,
         deedCid: body.deedCid,
         apn: body.apn,
+        state: body.state.toUpperCase(),
+        county: body.county,
       });
       await enqueueGovJob("assessor_apn_lookup", {
         propertyId: property.id,
         apn: body.apn,
-        state: body.state,
+        state: body.state.toUpperCase(),
         county: body.county,
+        addressLine1: body.addressLine1,
+        zip: body.zip,
       });
+
+      if (process.env.GOV_LOOKUP_AUTO_PROCESS !== "false") {
+        const { processQueuedLookupJobs } = require("../services/lookupService");
+        await processQueuedLookupJobs(10);
+      }
     }
 
     await writeAudit(req.wallet, "property.create", "property", property.id, {

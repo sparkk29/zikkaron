@@ -13,6 +13,7 @@ const deals = require("./routes/deals");
 const admin = require("./routes/admin");
 const auth = require("./routes/auth");
 const sso = require("./routes/sso");
+const lookups = require("./routes/lookups");
 
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
@@ -39,11 +40,13 @@ app.get("/health", (_req, res) => {
       agencySsoStubs: true,
       headerFallback: process.env.ALLOW_HEADER_AUTH === "true",
     },
+    govLookupAdapter: process.env.GOV_LOOKUP_ADAPTER || "simulated",
   });
 });
 
 app.use("/api/auth", auth);
 app.use("/api/auth/sso", sso);
+app.use("/api/lookups", lookups);
 app.use("/api/users", users);
 app.use("/api/properties", properties);
 app.use("/api/occupancy", occupancy);

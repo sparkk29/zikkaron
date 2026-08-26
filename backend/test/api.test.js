@@ -302,4 +302,24 @@ describe("Zikkaron backend happy paths", { timeout: 30000 }, () => {
     assert.equal(ok.status, 201, JSON.stringify(ok.data));
     assert.ok(ok.data.reminders.some((r) => /TESTNET FUNDS/i.test(r)));
   });
+
+  it("runs county/assessor lookup adapters for a property", async () => {
+    if (!healthOk) return;
+    const adapter = await api("/api/lookups/adapter");
+    assert.equal(adapter.status, 200);
+    assert.equal(adapter.data.adapter, "simulated");
+
+    const run = await api(`/api/lookups/run/${propertyId}`, {
+      method: "POST",
+      wallet: ADMIN,
+    });
+    assert.equal(run.status, 200, JSON.stringify(run.data));
+    assert.equal(run.data.countyRecord.lookupType, "county_record");
+    assert.equal(run.data.assessorApn.lookupType, "assessor_apn");
+    assert.match(run.data.notice, /authoritative/i);
+
+    const listed = await api(`/api/lookups/property/${propertyId}`, { wallet: ADMIN });
+    assert.equal(listed.status, 200);
+    assert.ok(listed.data.lookups.length >= 2);
+  });
 });
