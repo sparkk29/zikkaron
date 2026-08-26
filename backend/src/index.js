@@ -12,6 +12,7 @@ const authority = require("./routes/authority");
 const deals = require("./routes/deals");
 const admin = require("./routes/admin");
 const auth = require("./routes/auth");
+const sso = require("./routes/sso");
 
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
@@ -35,12 +36,14 @@ app.get("/health", (_req, res) => {
       "Designed for collaboration with government and law enforcement. Not an official government system.",
     auth: {
       siwe: true,
+      agencySsoStubs: true,
       headerFallback: process.env.ALLOW_HEADER_AUTH === "true",
     },
   });
 });
 
 app.use("/api/auth", auth);
+app.use("/api/auth/sso", sso);
 app.use("/api/users", users);
 app.use("/api/properties", properties);
 app.use("/api/occupancy", occupancy);

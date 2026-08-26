@@ -74,6 +74,39 @@ describe("Zikkaron SIWE auth", { timeout: 30000 }, () => {
     });
     assert.equal(logout.status, 200);
   });
+
+  it("lists SSO agencies and simulates agency SSO login", async () => {
+    if (!healthOk) return;
+    const list = await api("/api/auth/sso/agencies");
+    assert.equal(list.status, 200, JSON.stringify(list.data));
+    assert.ok(list.data.agencies.length >= 1);
+    const agencyId = list.data.agencies[0].id;
+
+    const oidc = await api("/api/auth/sso/oidc/start", {
+      method: "POST",
+      body: { agencyId },
+    });
+    assert.equal(oidc.status, 200);
+    assert.ok(oidc.data.authorizeUrlPlaceholder);
+
+    const wallet = Wallet.createRandom();
+    const sim = await api("/api/auth/sso/simulate", {
+      method: "POST",
+      body: {
+        agencyId,
+        walletAddress: wallet.address,
+        displayName: "SSO Test Officer",
+        subjectPlaceholder: "SUB-TEST-1",
+      },
+    });
+    assert.equal(sim.status, 201, JSON.stringify(sim.data));
+    assert.equal(sim.data.authMethod, "agency_sso_stub");
+    assert.equal(sim.data.user.role, "authority_officer");
+
+    const session = await api("/api/auth/session", { token: sim.data.token });
+    assert.equal(session.status, 200);
+    assert.equal(session.data.authMethod, "agency_sso_stub");
+  });
 });
 
 describe("Zikkaron backend happy paths", { timeout: 30000 }, () => {

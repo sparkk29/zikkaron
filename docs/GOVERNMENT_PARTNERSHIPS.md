@@ -43,11 +43,24 @@ Owner data reaches authorities via: **explicit owner share** (future), **authori
 - [ ] Named agency sponsor and data owner  
 - [ ] Purpose limitation: case support / fraud deterrence only  
 - [ ] No public shame list / bulk scrape for harassment  
-- [ ] AuthN/AuthZ plan (SSO) replacing demo wallet headers  
+- [x] AuthN/AuthZ plan (SSO) — **stubs shipped** (`/api/auth/sso/*`); live IdP still requires MoU  
 - [ ] Retention & audit of `authority_case_exports`  
 - [ ] CJIS / privacy counsel review if LE PII enters scope  
 - [ ] Clear UI language: not an official government system  
 - [ ] Exit: agency can stop pilot without Zikkaron claiming endorsement  
+
+## Agency SSO stubs (Phase 2)
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/auth/sso/agencies` | List pilot agencies with SSO placeholder config |
+| `POST /api/auth/sso/oidc/start` | Build OIDC authorize URL placeholder + state |
+| `GET /api/auth/sso/oidc/callback` | 501 until live code exchange |
+| `POST /api/auth/sso/saml/start` | SAML AuthnRequest stub |
+| `GET /api/auth/sso/saml/metadata` | SP metadata XML placeholder |
+| `POST /api/auth/sso/simulate` | Demo login: bind wallet session as `authority_officer` |
+
+Live OIDC/SAML federation is **out of MVP** until certificates, client secrets, and MoU exist.
 
 ## Integration stubs (`government_api_queue`)
 

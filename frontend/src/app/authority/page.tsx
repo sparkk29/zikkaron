@@ -1,7 +1,7 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { api } from "@/lib/api";
+import { FormEvent, useEffect, useState } from "react";
+import { api, setSessionToken } from "@/lib/api";
 import { useWallet } from "@/lib/wallet";
 
 export default function AuthorityPage() {
@@ -12,6 +12,63 @@ export default function AuthorityPage() {
   const [caseRef, setCaseRef] = useState("");
   const [msg, setMsg] = useState("");
   const [exportId, setExportId] = useState<string | null>(null);
+  const [ssoAgencies, setSsoAgencies] = useState<any[]>([]);
+  const [selectedAgency, setSelectedAgency] = useState("");
+
+  useEffect(() => {
+    api<{ agencies: any[] }>("/api/auth/sso/agencies")
+      .then((d) => {
+        setSsoAgencies(d.agencies);
+        if (d.agencies[0]) setSelectedAgency(d.agencies[0].id);
+      })
+      .catch(() => setSsoAgencies([]));
+  }, []);
+
+  async function simulateSso() {
+    if (!address) return connect();
+    if (!selectedAgency) return;
+    try {
+      const res = await api<{
+        token: string;
+        notice: string;
+        user: { agencyName: string; role: string };
+        authMethod: string;
+      }>("/api/auth/sso/simulate", {
+        method: "POST",
+        body: {
+          agencyId: selectedAgency,
+          walletAddress: address,
+          displayName: "Agency Officer (SSO stub)",
+          subjectPlaceholder: "DEMO-SSO-SUB",
+        },
+        token: null,
+      });
+      setSessionToken(res.token);
+      setMsg(
+        `${res.notice}\nBound to ${res.user.agencyName} as ${res.user.role} (${res.authMethod})`
+      );
+      window.location.reload();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "SSO simulate failed");
+    }
+  }
+
+  async function startOidcStub() {
+    if (!selectedAgency) return;
+    try {
+      const res = await api<{ notice: string; authorizeUrlPlaceholder: string }>(
+        "/api/auth/sso/oidc/start",
+        {
+          method: "POST",
+          body: { agencyId: selectedAgency },
+          token: null,
+        }
+      );
+      setMsg(`${res.notice}\nPlaceholder authorize URL:\n${res.authorizeUrlPlaceholder}`);
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "OIDC start failed");
+    }
+  }
 
   async function search(e: FormEvent) {
     e.preventDefault();
@@ -86,9 +143,37 @@ export default function AuthorityPage() {
         certified. Handle exports under agency policy.
       </div>
 
+      <div className="panel">
+        <h3>Agency SSO (stubs)</h3>
+        <p className="muted">
+          OIDC/SAML adapters are placeholders for MoU pilots. Use simulated login to bind an
+          authority session without a live government IdP.
+        </p>
+        <label className="label">Pilot agency</label>
+        <select value={selectedAgency} onChange={(e) => setSelectedAgency(e.target.value)}>
+          {ssoAgencies.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name} ({a.ssoProtocol || "n/a"})
+            </option>
+          ))}
+        </select>
+        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+          <button className="btn accent" type="button" onClick={simulateSso}>
+            Simulated agency SSO login
+          </button>
+          <button className="btn secondary" type="button" onClick={startOidcStub}>
+            Preview OIDC start stub
+          </button>
+        </div>
+      </div>
+
       <form className="panel" onSubmit={search}>
         <label className="label">Search address / APN / property id</label>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="100 Memorial Way or APN" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="100 Memorial Way or APN"
+        />
         <button className="btn accent" type="submit">
           Search
         </button>
@@ -185,7 +270,11 @@ export default function AuthorityPage() {
         </>
       )}
 
-      {msg && <pre className="panel muted" style={{ whiteSpace: "pre-wrap" }}>{msg}</pre>}
+      {msg && (
+        <pre className="panel muted" style={{ whiteSpace: "pre-wrap" }}>
+          {msg}
+        </pre>
+      )}
     </section>
   );
 }
