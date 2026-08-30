@@ -6,6 +6,7 @@ const {
   startSamlStub,
   simulateAgencyLogin,
 } = require("../services/agencySso");
+const { requireWallet } = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -82,9 +83,20 @@ const simulateSchema = z.object({
   protocol: z.enum(["simulated", "oidc", "saml"]).optional(),
 });
 
-router.post("/simulate", async (req, res, next) => {
+router.post("/simulate", requireWallet, async (req, res, next) => {
   try {
+    if (process.env.ALLOW_SIMULATED_SSO !== "true") {
+      return res.status(404).json({
+        error: "Simulated SSO is disabled",
+        notice: "Enable ALLOW_SIMULATED_SSO only in a local/demo environment.",
+      });
+    }
     const body = simulateSchema.parse(req.body);
+    if (body.walletAddress.toLowerCase() !== req.wallet) {
+      return res.status(403).json({
+        error: "walletAddress must match the authenticated session",
+      });
+    }
     const result = await simulateAgencyLogin(body);
     res.status(201).json(result);
   } catch (err) {

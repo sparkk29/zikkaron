@@ -48,10 +48,15 @@ function requireRole(...roles) {
         return res.status(403).json({ error: "User not registered" });
       }
       const user = result.rows[0];
-      if (!roles.includes(user.role) && user.role !== "admin") {
+      const isApprovedAdmin = user.role === "admin" && user.role_approved;
+      const isApprovedRequestedRole = roles.includes(user.role) && user.role_approved;
+      if (!isApprovedRequestedRole && !isApprovedAdmin) {
         return res.status(403).json({
-          error: `Requires role: ${roles.join("|")}`,
+          error: user.role_approved
+            ? `Requires role: ${roles.join("|")}`
+            : "This role is pending administrator approval",
           role: user.role,
+          roleApproved: user.role_approved,
         });
       }
       req.user = user;

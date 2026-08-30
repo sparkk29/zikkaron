@@ -18,4 +18,12 @@ Key routes:
 - `/api/deals/*` purchase deals
 - `/api/admin/*` queue + audit
 
-Auth: demo `x-wallet-address` header (spoofable — see docs/flaw.md).
+Auth: SIWE `Authorization: Bearer` sessions. The spoofable `x-wallet-address` fallback is
+disabled by default and should only be enabled for local tests.
+
+For a fresh local install, configure `BOOTSTRAP_ADMIN_WALLET` and temporarily set
+`ALLOW_PRIVILEGED_BOOTSTRAP=true`. Register that wallet as `admin` once, then unset the
+bootstrap flag. Privileged roles must thereafter be granted through `POST /api/users/roles/:wallet`.
+
+Simulated agency SSO requires `ALLOW_SIMULATED_SSO=true` and an authenticated session; it is not
+an identity-provider assertion.

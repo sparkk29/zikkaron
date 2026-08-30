@@ -92,6 +92,7 @@ describe("Zikkaron SIWE auth", { timeout: 30000 }, () => {
     const wallet = Wallet.createRandom();
     const sim = await api("/api/auth/sso/simulate", {
       method: "POST",
+      wallet: wallet.address,
       body: {
         agencyId,
         walletAddress: wallet.address,
@@ -133,18 +134,16 @@ describe("Zikkaron backend happy paths", { timeout: 30000 }, () => {
 
   it("registers KYC hashes for owner, admin, authority", async () => {
     if (!healthOk) return;
+    const selfAssigned = await api("/api/users/register", {
+      method: "POST",
+      wallet: OWNER,
+      body: { role: "authority_officer", agencyName: "Untrusted Caller" },
+    });
+    assert.equal(selfAssigned.status, 403);
+
     for (const [wallet, role, extra] of [
       [ADMIN, "admin", {}],
       [OWNER, "seller", { kycPayload: "owner-demo-kyc" }],
-      [
-        AUTHORITY,
-        "authority_officer",
-        {
-          agencyName: "Demo Sheriff Office (Pilot Placeholder)",
-          badgeRefPlaceholder: "DEMO-BADGE-001",
-          displayName: "Officer Demo",
-        },
-      ],
       [BUYER, "buyer", { kycPayload: "buyer-demo-kyc" }],
     ]) {
       const { status, data } = await api("/api/users/register", {
@@ -155,6 +154,25 @@ describe("Zikkaron backend happy paths", { timeout: 30000 }, () => {
       assert.equal(status, 201, JSON.stringify(data));
       assert.equal(data.user.role, role);
     }
+
+    const authoritySignup = await api("/api/users/register", {
+      method: "POST",
+      wallet: AUTHORITY,
+      body: { role: "seller", displayName: "Officer Demo" },
+    });
+    assert.equal(authoritySignup.status, 201, JSON.stringify(authoritySignup.data));
+
+    const authorityApproval = await api(`/api/users/roles/${AUTHORITY}`, {
+      method: "POST",
+      wallet: ADMIN,
+      body: {
+        role: "authority_officer",
+        agencyName: "Demo Sheriff Office (Pilot Placeholder)",
+        badgeRefPlaceholder: "DEMO-BADGE-001",
+      },
+    });
+    assert.equal(authorityApproval.status, 200, JSON.stringify(authorityApproval.data));
+    assert.equal(authorityApproval.data.user.roleApproved, true);
 
     const verify = await api(`/api/users/verify/${OWNER}`, { method: "POST", wallet: ADMIN });
     assert.equal(verify.status, 200);

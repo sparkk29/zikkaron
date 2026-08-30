@@ -5,9 +5,10 @@ Zikkaron is assistive memorial software. These limits are intentional disclosure
 ## Access & auth
 
 - **Primary auth is SIWE (Sign-In with Ethereum)** with server-side sessions (`Authorization: Bearer`).
-- **`x-wallet-address` remains available only when `ALLOW_HEADER_AUTH=true`** (local/tests). It is spoofable — disable in shared environments.
-- **Agency SSO is stubbed** (`agency_sso_stub` sessions via `/api/auth/sso/simulate`). Live OIDC/SAML callbacks return 501 until MoU + IdP credentials.
-- **Authority access is not accredited LE access control.**
+- **`x-wallet-address` remains available only when `ALLOW_HEADER_AUTH=true`** (local tests). It is spoofable — disable in shared environments.
+- **Privileged roles require administrator approval.** One-time admin bootstrap is controlled by an exact `BOOTSTRAP_ADMIN_WALLET` plus `ALLOW_PRIVILEGED_BOOTSTRAP=true`.
+- **Agency SSO is stubbed** (`agency_sso_stub` sessions via `/api/auth/sso/simulate`) and requires an authenticated session plus `ALLOW_SIMULATED_SSO=true`. Live OIDC/SAML callbacks return 501 until MoU + IdP credentials.
+- **Authority access is not accredited LE access control.** SSO placeholders do not validate real agency identity.
 - **Not CJIS / FedRAMP / state security certified.**
 
 ## Evidence & documents

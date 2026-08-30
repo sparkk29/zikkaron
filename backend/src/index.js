@@ -3,6 +3,7 @@ require("dotenv").config({ path: require("path").resolve(__dirname, "../../.env"
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 const { ZodError } = require("zod");
 
 const users = require("./routes/users");
@@ -17,6 +18,19 @@ const lookups = require("./routes/lookups");
 
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: Number(process.env.API_RATE_LIMIT || 120),
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  skip: (req) => req.path === "/health",
+});
+const authLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: Number(process.env.AUTH_RATE_LIMIT || 60),
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+});
 
 app.use(helmet());
 app.use(
@@ -25,6 +39,7 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization", "x-wallet-address"],
   })
 );
+app.use(apiLimiter);
 app.use(express.json({ limit: "1mb" }));
 
 app.get("/health", (_req, res) => {
@@ -44,8 +59,8 @@ app.get("/health", (_req, res) => {
   });
 });
 
-app.use("/api/auth", auth);
-app.use("/api/auth/sso", sso);
+app.use("/api/auth", authLimiter, auth);
+app.use("/api/auth/sso", authLimiter, sso);
 app.use("/api/lookups", lookups);
 app.use("/api/users", users);
 app.use("/api/properties", properties);
