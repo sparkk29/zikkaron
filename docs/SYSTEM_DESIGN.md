@@ -35,6 +35,11 @@
 
 NatSpec on all modules: assists owners and authorities; not title; not eviction; not an official government system.
 
+The deployment path uses ERC-1967 proxies for the UUPS modules. Implementations are locked
+against direct initialization, and `UPGRADE_ADMIN_ADDRESS` can receive the upgrade role. The
+deployer should be a multisig/timelock-controlled operational account for shared networks.
+PropertyRegistry, PossessionMemorial, and EscrowPayment expose admin pause/unpause controls.
+
 ## Off-chain authority path
 
 1. Search → case view (read-only)  

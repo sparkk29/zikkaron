@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {ZikkaronRoles} from "./ZikkaronRoles.sol";
 
 /**
@@ -11,7 +12,7 @@ import {ZikkaronRoles} from "./ZikkaronRoles.sol";
  * @notice Timestamped memorial hashes for occupancy incidents and notices. Not service of process. Not eviction.
  * @dev Zikkaron assists owners and authorities with memorial records. Not title. Not eviction. Not an official government system. County recording, law enforcement, and courts remain authoritative.
  */
-contract PossessionMemorial is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
+contract PossessionMemorial is Initializable, AccessControlUpgradeable, UUPSUpgradeable, PausableUpgradeable {
     enum EventType {
         UnauthorizedOccupancyReported,
         NoticeMemorialized,
@@ -44,11 +45,13 @@ contract PossessionMemorial is Initializable, AccessControlUpgradeable, UUPSUpgr
     );
 
     /// @custom:oz-upgrades-unsafe-allow constructor
-    /// @dev MVP deploys implementation directly for Amoy/local tests. Production should use UUPS proxies and call _disableInitializers() in the constructor.
-    constructor() {}
+    constructor() {
+        _disableInitializers();
+    }
 
     function initialize(address admin) external initializer {
         __AccessControl_init();
+        __Pausable_init();
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(ZikkaronRoles.ADMIN, admin);
         nextEventId = 1;
@@ -59,7 +62,7 @@ contract PossessionMemorial is Initializable, AccessControlUpgradeable, UUPSUpgr
         EventType eventType,
         bytes32 evidenceHash,
         string calldata noteCid
-    ) external returns (uint256 eventId) {
+    ) external whenNotPaused returns (uint256 eventId) {
         require(propertyId > 0, "property required");
         require(evidenceHash != bytes32(0) || bytes(noteCid).length > 0, "evidence required");
 
@@ -79,6 +82,14 @@ contract PossessionMemorial is Initializable, AccessControlUpgradeable, UUPSUpgr
 
     function getPropertyEventIds(uint256 propertyId) external view returns (uint256[] memory) {
         return propertyEvents[propertyId];
+    }
+
+    function pause() external onlyRole(ZikkaronRoles.ADMIN) {
+        _pause();
+    }
+
+    function unpause() external onlyRole(ZikkaronRoles.ADMIN) {
+        _unpause();
     }
 
     function _authorizeUpgrade(address) internal override onlyRole(ZikkaronRoles.ADMIN) {}

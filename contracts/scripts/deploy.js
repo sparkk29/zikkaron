@@ -1,26 +1,50 @@
-const { ethers } = require("hardhat");
+const { ethers, network } = require("hardhat");
 
 /**
  * Deploy Zikkaron UUPS modules to the selected network.
  * Polygon Amoy (80002) first. Mainnet requires CONFIRM_MAINNET_DEPLOY=yes.
  */
 async function main() {
+  if (network.name === "polygon" && process.env.CONFIRM_MAINNET_DEPLOY !== "yes") {
+    throw new Error("Mainnet deployment requires CONFIRM_MAINNET_DEPLOY=yes");
+  }
+
   const [deployer] = await ethers.getSigners();
   console.log("Deploying Zikkaron with:", deployer.address);
 
-  // Lightweight deploy without OpenZeppelin upgrades plugin for MVP simplicity:
-  // deploy implementation + initialize via factory pattern (non-proxy for local/Amoy MVP).
-  // Production should use UUPS proxies; contracts remain UUPS-ready.
-
   async function deploy(name) {
-    const Factory = await ethers.getContractFactory(name);
-    const c = await Factory.deploy();
-    await c.waitForDeployment();
-    const addr = await c.getAddress();
-    const tx = await c.initialize(deployer.address);
-    await tx.wait();
-    console.log(`${name}: ${addr}`);
-    return addr;
+    const implementationFactory = await ethers.getContractFactory(name);
+    const implementation = await implementationFactory.deploy();
+    await implementation.waitForDeployment();
+    const initializationData = implementationFactory.interface.encodeFunctionData(
+      "initialize",
+      [deployer.address]
+    );
+
+    const proxyFactory = await ethers.getContractFactory("ZikkaronProxy");
+    const proxy = await proxyFactory.deploy(
+      await implementation.getAddress(),
+      initializationData
+    );
+    await proxy.waitForDeployment();
+    const proxyAddress = await proxy.getAddress();
+    const proxied = await ethers.getContractAt(name, proxyAddress);
+
+    const upgradeAdmin = process.env.UPGRADE_ADMIN_ADDRESS || deployer.address;
+    if (upgradeAdmin.toLowerCase() !== deployer.address.toLowerCase()) {
+      const adminRole = ethers.id("ADMIN");
+      await (await proxied.grantRole(adminRole, upgradeAdmin)).wait();
+      console.log(`${name}: upgrade admin granted to ${upgradeAdmin}`);
+    }
+
+    console.log(
+      `${name}: proxy=${proxyAddress} implementation=${await implementation.getAddress()}`
+    );
+    return {
+      proxy: proxyAddress,
+      implementation: await implementation.getAddress(),
+      upgradeAdmin,
+    };
   }
 
   const addresses = {

@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {ZikkaronRoles} from "./ZikkaronRoles.sol";
 
 /**
@@ -11,7 +12,7 @@ import {ZikkaronRoles} from "./ZikkaronRoles.sol";
  * @notice Memorial registry of property claims bound to APN/county placeholders. NOT legal title.
  * @dev Zikkaron assists owners and authorities with memorial records. Not title. Not eviction. Not an official government system. County recording, law enforcement, and courts remain authoritative.
  */
-contract PropertyRegistry is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
+contract PropertyRegistry is Initializable, AccessControlUpgradeable, UUPSUpgradeable, PausableUpgradeable {
     enum OccupancyStatus {
         VacantSecured,
         OwnerOccupied,
@@ -47,11 +48,13 @@ contract PropertyRegistry is Initializable, AccessControlUpgradeable, UUPSUpgrad
     event ListingPaused(uint256 indexed propertyId, bool paused);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
-    /// @dev MVP deploys implementation directly for Amoy/local tests. Production should use UUPS proxies and call _disableInitializers() in the constructor.
-    constructor() {}
+    constructor() {
+        _disableInitializers();
+    }
 
     function initialize(address admin) external initializer {
         __AccessControl_init();
+        __Pausable_init();
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(ZikkaronRoles.ADMIN, admin);
         nextPropertyId = 1;
@@ -63,7 +66,7 @@ contract PropertyRegistry is Initializable, AccessControlUpgradeable, UUPSUpgrad
         string calldata county,
         string calldata stateCode,
         OccupancyStatus occupancyStatus
-    ) external returns (uint256 propertyId) {
+    ) external whenNotPaused returns (uint256 propertyId) {
         require(deedCidHash != bytes32(0), "empty deed");
         require(bytes(apn).length > 0, "apn required");
         bytes32 apnKey = keccak256(abi.encodePacked(stateCode, "|", county, "|", apn));
@@ -87,7 +90,7 @@ contract PropertyRegistry is Initializable, AccessControlUpgradeable, UUPSUpgrad
         emit OccupancyStatusUpdated(propertyId, occupancyStatus);
     }
 
-    function setOccupancyStatus(uint256 propertyId, OccupancyStatus status) external {
+    function setOccupancyStatus(uint256 propertyId, OccupancyStatus status) external whenNotPaused {
         Property storage p = properties[propertyId];
         require(p.exists, "missing");
         require(p.claimedOwner == msg.sender || hasRole(ZikkaronRoles.ADMIN, msg.sender), "not owner");
@@ -95,7 +98,7 @@ contract PropertyRegistry is Initializable, AccessControlUpgradeable, UUPSUpgrad
         emit OccupancyStatusUpdated(propertyId, status);
     }
 
-    function setListingPaused(uint256 propertyId, bool paused) external {
+    function setListingPaused(uint256 propertyId, bool paused) external whenNotPaused {
         Property storage p = properties[propertyId];
         require(p.exists, "missing");
         require(
@@ -108,10 +111,22 @@ contract PropertyRegistry is Initializable, AccessControlUpgradeable, UUPSUpgrad
         emit ListingPaused(propertyId, paused);
     }
 
-    function transferClaimedOwner(uint256 propertyId, address newOwner) external onlyRole(ZikkaronRoles.ADMIN) {
+    function transferClaimedOwner(uint256 propertyId, address newOwner)
+        external
+        onlyRole(ZikkaronRoles.ADMIN)
+        whenNotPaused
+    {
         Property storage p = properties[propertyId];
         require(p.exists, "missing");
         p.claimedOwner = newOwner;
+    }
+
+    function pause() external onlyRole(ZikkaronRoles.ADMIN) {
+        _pause();
+    }
+
+    function unpause() external onlyRole(ZikkaronRoles.ADMIN) {
+        _unpause();
     }
 
     function _authorizeUpgrade(address) internal override onlyRole(ZikkaronRoles.ADMIN) {}

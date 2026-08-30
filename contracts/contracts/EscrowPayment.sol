@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {ZikkaronRoles} from "./ZikkaronRoles.sol";
 
 /**
@@ -11,7 +12,7 @@ import {ZikkaronRoles} from "./ZikkaronRoles.sol";
  * @notice Testnet POL escrow for demo purchase deals. TESTNET FUNDS, NOT A CLOSING. Not licensed escrow.
  * @dev Zikkaron assists owners and authorities with memorial records. Not title. Not eviction. Not an official government system. County recording, law enforcement, and courts remain authoritative.
  */
-contract EscrowPayment is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
+contract EscrowPayment is Initializable, AccessControlUpgradeable, UUPSUpgradeable, PausableUpgradeable {
     enum DealStatus {
         Open,
         Funded,
@@ -49,11 +50,13 @@ contract EscrowPayment is Initializable, AccessControlUpgradeable, UUPSUpgradeab
     }
 
     /// @custom:oz-upgrades-unsafe-allow constructor
-    /// @dev MVP deploys implementation directly for Amoy/local tests. Production should use UUPS proxies and call _disableInitializers() in the constructor.
-    constructor() {}
+    constructor() {
+        _disableInitializers();
+    }
 
     function initialize(address admin) external initializer {
         __AccessControl_init();
+        __Pausable_init();
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(ZikkaronRoles.ADMIN, admin);
         nextDealId = 1;
@@ -66,7 +69,7 @@ contract EscrowPayment is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         uint256 amount,
         bool disclaimerAccepted,
         bool fraudWarningAcknowledged
-    ) external returns (uint256 dealId) {
+    ) external whenNotPaused returns (uint256 dealId) {
         require(disclaimerAccepted, "disclaimer required");
         require(fraudWarningAcknowledged, "fraud warning required");
         require(buyer != address(0) && buyer != msg.sender, "invalid buyer");
@@ -85,7 +88,7 @@ contract EscrowPayment is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         emit DealOpened(dealId, propertyId, msg.sender, buyer, amount);
     }
 
-    function fundDeal(uint256 dealId) external payable nonReentrant {
+    function fundDeal(uint256 dealId) external payable nonReentrant whenNotPaused {
         Deal storage d = deals[dealId];
         require(d.status == DealStatus.Open, "not open");
         require(msg.sender == d.buyer, "not buyer");
@@ -110,6 +113,14 @@ contract EscrowPayment is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         (bool ok, ) = d.buyer.call{value: d.amount}("");
         require(ok, "transfer failed");
         emit DealRefunded(dealId, d.buyer, d.amount);
+    }
+
+    function pause() external onlyRole(ZikkaronRoles.ADMIN) {
+        _pause();
+    }
+
+    function unpause() external onlyRole(ZikkaronRoles.ADMIN) {
+        _unpause();
     }
 
     function _authorizeUpgrade(address) internal override onlyRole(ZikkaronRoles.ADMIN) {}

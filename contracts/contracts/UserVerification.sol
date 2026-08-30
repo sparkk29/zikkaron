@@ -27,8 +27,9 @@ contract UserVerification is Initializable, AccessControlUpgradeable, UUPSUpgrad
     event FraudRiskUpdated(address indexed user, uint8 level, address indexed actor);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
-    /// @dev MVP deploys implementation directly for Amoy/local tests. Production should use UUPS proxies and call _disableInitializers() in the constructor.
-    constructor() {}
+    constructor() {
+        _disableInitializers();
+    }
 
     function initialize(address admin) external initializer {
         __AccessControl_init();

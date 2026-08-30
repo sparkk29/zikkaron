@@ -6,11 +6,22 @@ describe("Zikkaron contracts", function () {
     const [admin, owner, buyer, tenant, titleOfficer, authority] = await ethers.getSigners();
 
     async function deploy(name) {
-      const F = await ethers.getContractFactory(name);
-      const c = await F.deploy();
-      await c.waitForDeployment();
-      await (await c.initialize(admin.address)).wait();
-      return c;
+      const implementationFactory = await ethers.getContractFactory(name);
+      const implementation = await implementationFactory.deploy();
+      await implementation.waitForDeployment();
+      const initData = implementationFactory.interface.encodeFunctionData(
+        "initialize",
+        [admin.address]
+      );
+      const proxyFactory = await ethers.getContractFactory("ZikkaronProxy");
+      const proxy = await proxyFactory.deploy(
+        await implementation.getAddress(),
+        initData
+      );
+      await proxy.waitForDeployment();
+      const proxied = await ethers.getContractAt(name, await proxy.getAddress());
+      await expect(implementation.initialize(admin.address)).to.be.reverted;
+      return proxied;
     }
 
     const userVerification = await deploy("UserVerification");
@@ -110,5 +121,17 @@ describe("Zikkaron contracts", function () {
     await (await ownershipTransfer.connect(titleOfficer).simulateCountyVerify(1)).wait();
     const t = await ownershipTransfer.transfers(1);
     expect(t.status).to.equal(2); // CountyVerifySimulated
+  });
+
+  it("pauses property memorial writes without affecting reads", async function () {
+    const { admin, owner, propertyRegistry } = await deployAll();
+    await (await propertyRegistry.connect(admin).pause()).wait();
+    await expect(
+      propertyRegistry
+        .connect(owner)
+        .registerProperty(ethers.id("paused-deed"), "PAUSED-1", "Maricopa", "AZ", 0)
+    ).to.be.reverted;
+    expect(await propertyRegistry.nextPropertyId()).to.equal(1n);
+    await (await propertyRegistry.connect(admin).unpause()).wait();
   });
 });
