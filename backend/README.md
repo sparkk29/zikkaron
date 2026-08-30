@@ -17,6 +17,7 @@ Key routes:
 - `/api/authority/*` search, case, exports, acknowledge
 - `/api/documents/*` validated evidence ingestion and document metadata
 - `/api/shares/*` expiring owner-created memorial share links
+- `/api/authority/cases/*` agency-scoped case lifecycle
 - `/api/deals/*` purchase deals
 - `/api/admin/*` queue + audit
 
@@ -32,3 +33,7 @@ an identity-provider assertion.
 
 Evidence upload uses IPFS when `IPFS_API_URL` is configured. If IPFS is unavailable and
 `IPFS_UPLOAD_REQUIRED=false`, the API records a clearly labeled SHA-256-only fallback.
+
+Authority exports are scoped to the officer's agency, carry a retention deadline, support
+redaction, and can be revoked. Admin retention purge redacts expired payloads while preserving
+audit metadata.

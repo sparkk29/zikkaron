@@ -86,6 +86,7 @@ router.post(
   async (req, res, next) => {
     try {
       const body = exportSchema.parse(req.body);
+      const agencyId = resolveAgencyForActor(req, body.agencyId);
       const casePack = await buildCasePack(body.propertyId);
       if (!casePack) return res.status(404).json({ error: "Property not found" });
 
@@ -111,7 +112,7 @@ router.post(
          VALUES ($1,$2,$3,$4,TRUE,$5,$6,'json') RETURNING *`,
         [
           body.propertyId,
-          body.agencyId || req.user.agency_id || null,
+          agencyId,
           req.wallet,
           body.caseRefPlaceholder || null,
           snapshot,
@@ -154,13 +155,23 @@ router.get(
   async (req, res, next) => {
     try {
       const result = await query(
-        `SELECT id, property_id, case_ref_placeholder, payload_snapshot,
-                manifest_hash, watermark, created_at
+        `SELECT id, property_id, agency_id, case_ref_placeholder, payload_snapshot,
+                manifest_hash, watermark, created_at, retention_expires_at,
+                revoked_at, purged_at
          FROM authority_case_exports WHERE id = $1`,
         [req.params.exportId]
       );
       if (!result.rows[0]) return res.status(404).json({ error: "Export not found" });
       const exportRow = result.rows[0];
+      if (
+        req.user.role !== "admin" &&
+        (!req.user.agency_id || exportRow.agency_id !== req.user.agency_id)
+      ) {
+        return res.status(403).json({ error: "Export is outside your agency scope" });
+      }
+      if (exportRow.revoked_at || exportRow.purged_at || new Date(exportRow.retention_expires_at) <= new Date()) {
+        return res.status(410).json({ error: "Export is revoked or past its retention period" });
+      }
       await writeAudit(req.wallet, "authority.export_download", "authority_case_export", exportRow.id, {});
       res.setHeader("Content-Type", "application/json");
       res.setHeader(
@@ -174,8 +185,151 @@ router.get(
         manifestHash: exportRow.manifest_hash,
         watermark: exportRow.watermark,
         createdAt: exportRow.created_at,
+        retentionExpiresAt: exportRow.retention_expires_at,
         pack: exportRow.payload_snapshot,
       });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+router.get(
+  "/exports",
+  requireWallet,
+  requireRole("authority_officer", "admin"),
+  async (req, res, next) => {
+    try {
+      const result =
+        req.user.role === "admin"
+          ? await query(
+              `SELECT id, property_id, agency_id, actor_wallet, case_ref_placeholder,
+                      manifest_hash, format, retention_expires_at, revoked_at, purged_at, created_at
+               FROM authority_case_exports ORDER BY created_at DESC LIMIT 100`
+            )
+          : await query(
+              `SELECT id, property_id, agency_id, actor_wallet, case_ref_placeholder,
+                      manifest_hash, format, retention_expires_at, revoked_at, purged_at, created_at
+               FROM authority_case_exports
+               WHERE agency_id = $1 ORDER BY created_at DESC LIMIT 100`,
+              [req.user.agency_id]
+            );
+      res.json({ exports: result.rows });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+router.post(
+  "/exports/:exportId/revoke",
+  requireWallet,
+  requireRole("authority_officer", "admin"),
+  async (req, res, next) => {
+    try {
+      const result = await query(
+        `UPDATE authority_case_exports
+         SET revoked_at = NOW(), revoked_by_wallet = $1
+         WHERE id = $2
+           AND revoked_at IS NULL
+           AND ($3 = 'admin' OR agency_id = $4)
+         RETURNING id, revoked_at`,
+        [req.wallet, req.params.exportId, req.user.role, req.user.agency_id || null]
+      );
+      if (!result.rows[0]) return res.status(404).json({ error: "Active export not found in agency scope" });
+      await writeAudit(req.wallet, "authority.export_revoke", "authority_case_export", req.params.exportId, {});
+      res.json({ export: result.rows[0] });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+const caseSchema = z.object({
+  propertyId: z.string().uuid(),
+  priority: z.enum(["low", "normal", "high"]).default("normal"),
+  note: z.string().max(1000).optional(),
+});
+
+router.post(
+  "/cases",
+  requireWallet,
+  requireRole("authority_officer", "admin"),
+  async (req, res, next) => {
+    try {
+      const body = caseSchema.parse(req.body);
+      const agencyId = resolveAgencyForActor(req);
+      if (!agencyId) return res.status(400).json({ error: "agencyId is required for an authority case" });
+      const result = await query(
+        `INSERT INTO authority_cases (property_id, agency_id, opened_by_wallet, priority, note)
+         VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+        [body.propertyId, agencyId, req.wallet, body.priority, body.note || null]
+      );
+      await writeAudit(req.wallet, "authority.case_open", "authority_case", result.rows[0].id, {});
+      res.status(201).json({ case: result.rows[0] });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+router.get(
+  "/cases",
+  requireWallet,
+  requireRole("authority_officer", "admin"),
+  async (req, res, next) => {
+    try {
+      const result =
+        req.user.role === "admin"
+          ? await query(`SELECT * FROM authority_cases ORDER BY updated_at DESC LIMIT 100`)
+          : await query(
+              `SELECT * FROM authority_cases WHERE agency_id = $1 ORDER BY updated_at DESC LIMIT 100`,
+              [req.user.agency_id]
+            );
+      res.json({ cases: result.rows });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+router.patch(
+  "/cases/:caseId",
+  requireWallet,
+  requireRole("authority_officer", "admin"),
+  async (req, res, next) => {
+    try {
+      const body = z
+        .object({
+          status: z.enum(["open", "in_review", "referred", "closed"]).optional(),
+          priority: z.enum(["low", "normal", "high"]).optional(),
+          assignedToWallet: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
+          note: z.string().max(1000).optional(),
+        })
+        .parse(req.body);
+      const result = await query(
+        `UPDATE authority_cases
+         SET status = COALESCE($1, status),
+             priority = COALESCE($2, priority),
+             assigned_to_wallet = COALESCE($3, assigned_to_wallet),
+             note = COALESCE($4, note),
+             closed_at = CASE WHEN $1 = 'closed' THEN NOW() ELSE closed_at END,
+             updated_at = NOW()
+         WHERE id = $5 AND ($6 = 'admin' OR agency_id = $7)
+         RETURNING *`,
+        [
+          body.status || null,
+          body.priority || null,
+          body.assignedToWallet?.toLowerCase() || null,
+          body.note || null,
+          req.params.caseId,
+          req.user.role,
+          req.user.agency_id || null,
+        ]
+      );
+      if (!result.rows[0]) return res.status(404).json({ error: "Case not found in agency scope" });
+      await writeAudit(req.wallet, "authority.case_update", "authority_case", req.params.caseId, body);
+      res.json({ case: result.rows[0] });
     } catch (err) {
       next(err);
     }
@@ -196,6 +350,7 @@ router.post(
   async (req, res, next) => {
     try {
       const body = ackSchema.parse(req.body);
+      const agencyId = resolveAgencyForActor(req, body.agencyId);
       const result = await query(
         `INSERT INTO authority_acknowledgements
            (export_id, property_id, agency_id, actor_wallet, note)
@@ -203,7 +358,7 @@ router.post(
         [
           body.exportId || null,
           body.propertyId,
-          body.agencyId || req.user.agency_id || null,
+          agencyId,
           req.wallet,
           body.note || "Simulated agency acknowledgment of receipt",
         ]
@@ -298,6 +453,17 @@ async function buildCasePack(propertyId) {
     priorExports: exports_.rows,
     documents: documents.rows,
   };
+}
+
+function resolveAgencyForActor(req, requestedAgencyId) {
+  if (req.user.role === "admin") return requestedAgencyId || req.user.agency_id || null;
+  if (!req.user.agency_id) {
+    throw Object.assign(new Error("Authority account is not linked to an agency"), { status: 403 });
+  }
+  if (requestedAgencyId && requestedAgencyId !== req.user.agency_id) {
+    throw Object.assign(new Error("Requested agency is outside your scope"), { status: 403 });
+  }
+  return req.user.agency_id;
 }
 
 function redactCasePack(pack, options) {

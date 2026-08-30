@@ -12,6 +12,8 @@
 ## Product
 
 - Owner-initiated share links with expiry and purpose limitation.
+- ~~Agency-scoped case records, export revocation, and retention purge~~ (Phase 6 shipped;
+  production retention schedules still require agency policy).
 - Privacy-preserving repeat-fraud pattern flags (wallet/APN clusters) for AG / consumer protection.
 - ~~SIWE session auth~~ (Phase 1 shipped); hardware key options for high-value owners.
 - ~~Agency SSO (SAML/OIDC) stubs~~ (Phase 2 shipped); live IdP still needs MoU.

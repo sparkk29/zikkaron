@@ -58,6 +58,13 @@ NatSpec on all modules: assists owners and authorities; not title; not eviction;
 4. Authority exports include document metadata, redaction options, and a SHA-256 manifest.
 5. Owners can create expiring, purpose-labeled share links through `/api/shares`.
 
+## Authority governance
+
+- Privileged authority accounts must be linked to an agency.
+- Exports, acknowledgements, revocations, and case records are scoped to that agency.
+- Case-pack payloads default to a 90-day retention deadline.
+- Admin purge redacts expired payloads while preserving export and audit metadata.
+
 ## Security controls in MVP
 
 Roles including `authority_officer`, export logging, disclaimers, hashes-only PII, PossessionMemorial, dispute warnings, default unofficial county records.

@@ -47,4 +47,31 @@ router.get("/audit", requireWallet, requireRole("admin"), async (_req, res, next
   }
 });
 
+router.post("/retention/purge", requireWallet, requireRole("admin"), async (req, res, next) => {
+  try {
+    const result = await query(
+      `UPDATE authority_case_exports
+       SET payload_snapshot = jsonb_build_object(
+             'purged', TRUE,
+             'exportId', id::text,
+             'propertyId', property_id::text,
+             'purgedAt', NOW()
+           ),
+           purged_at = NOW(),
+           purged_by_wallet = $1
+       WHERE retention_expires_at <= NOW()
+         AND purged_at IS NULL
+       RETURNING id`,
+      [req.wallet]
+    );
+    res.json({
+      purgedCount: result.rowCount,
+      exportIds: result.rows.map((row) => row.id),
+      note: "Expired case-pack payloads were redacted; audit metadata remains.",
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

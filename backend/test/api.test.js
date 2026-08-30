@@ -176,6 +176,9 @@ describe("Zikkaron backend happy paths", { timeout: 30000 }, () => {
     });
     assert.equal(authoritySignup.status, 201, JSON.stringify(authoritySignup.data));
 
+    const agencyList = await api("/api/auth/sso/agencies");
+    assert.equal(agencyList.status, 200);
+    const agencyId = agencyList.data.agencies[0].id;
     const authorityApproval = await api(`/api/users/roles/${AUTHORITY}`, {
       method: "POST",
       wallet: ADMIN,
@@ -183,6 +186,7 @@ describe("Zikkaron backend happy paths", { timeout: 30000 }, () => {
         role: "authority_officer",
         agencyName: "Demo Sheriff Office (Pilot Placeholder)",
         badgeRefPlaceholder: "DEMO-BADGE-001",
+        agencyId,
       },
     });
     assert.equal(authorityApproval.status, 200, JSON.stringify(authorityApproval.data));
@@ -317,6 +321,19 @@ describe("Zikkaron backend happy paths", { timeout: 30000 }, () => {
     assert.ok(caseView.data.authorizedOccupants);
     assert.ok(caseView.data.incidentTimeline.length >= 1);
 
+    const authorityCase = await api("/api/authority/cases", {
+      method: "POST",
+      wallet: AUTHORITY,
+      body: { propertyId, priority: "high", note: "Demo case review" },
+    });
+    assert.equal(authorityCase.status, 201, JSON.stringify(authorityCase.data));
+    const caseUpdate = await api(`/api/authority/cases/${authorityCase.data.case.id}`, {
+      method: "PATCH",
+      wallet: AUTHORITY,
+      body: { status: "in_review" },
+    });
+    assert.equal(caseUpdate.status, 200, JSON.stringify(caseUpdate.data));
+
     const exp = await api("/api/authority/exports", {
       method: "POST",
       wallet: AUTHORITY,
@@ -346,6 +363,16 @@ describe("Zikkaron backend happy paths", { timeout: 30000 }, () => {
       },
     });
     assert.equal(ack.status, 201, JSON.stringify(ack.data));
+
+    const exports = await api("/api/authority/exports", { wallet: AUTHORITY });
+    assert.equal(exports.status, 200);
+    assert.ok(exports.data.exports.some((item) => item.id === exp.data.export.id));
+
+    const revoke = await api(`/api/authority/exports/${exp.data.export.id}/revoke`, {
+      method: "POST",
+      wallet: AUTHORITY,
+    });
+    assert.equal(revoke.status, 200, JSON.stringify(revoke.data));
   });
 
   it("purchase deal requires disclaimer and surfaces fraud warnings", async () => {
