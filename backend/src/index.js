@@ -15,6 +15,8 @@ const admin = require("./routes/admin");
 const auth = require("./routes/auth");
 const sso = require("./routes/sso");
 const lookups = require("./routes/lookups");
+const documents = require("./routes/documents");
+const shares = require("./routes/shares");
 
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
@@ -62,6 +64,8 @@ app.get("/health", (_req, res) => {
 app.use("/api/auth", authLimiter, auth);
 app.use("/api/auth/sso", authLimiter, sso);
 app.use("/api/lookups", lookups);
+app.use("/api/documents", documents);
+app.use("/api/shares", shares);
 app.use("/api/users", users);
 app.use("/api/properties", properties);
 app.use("/api/occupancy", occupancy);

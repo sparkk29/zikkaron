@@ -11,6 +11,7 @@
 ┌───────────────────────────▼─────────────────────────────┐
 │  Express API · Zod · Helmet · CORS                      │
 │  /api/authority/* · /api/properties · /api/occupancy    │
+│  /api/documents · /api/shares                           │
 └───────────────┬─────────────────────────────┬───────────┘
                 │                             │
         PostgreSQL                     Polygon Amoy
@@ -47,6 +48,15 @@ NatSpec on all modules: assists owners and authorities; not title; not eviction;
 | 1 | SIWE Bearer sessions (`/api/auth/*`) |
 | 2 | Agency SSO stubs (`/api/auth/sso/*`) |
 | 3 | County/assessor lookup adapters (`/api/lookups/*`, `GOV_LOOKUP_ADAPTER`) |
+
+## Evidence path
+
+1. Owner uploads an allowed document through `/api/documents`.
+2. The API validates size/type and runs a simulated malware check.
+3. IPFS is attempted when `IPFS_API_URL` is configured; otherwise a labeled SHA-256-only
+   fallback is stored. Raw content is not stored in PostgreSQL.
+4. Authority exports include document metadata, redaction options, and a SHA-256 manifest.
+5. Owners can create expiring, purpose-labeled share links through `/api/shares`.
 
 ## Security controls in MVP
 

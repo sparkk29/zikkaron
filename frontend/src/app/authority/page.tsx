@@ -14,6 +14,8 @@ export default function AuthorityPage() {
   const [exportId, setExportId] = useState<string | null>(null);
   const [ssoAgencies, setSsoAgencies] = useState<any[]>([]);
   const [selectedAgency, setSelectedAgency] = useState("");
+  const [redactOwnerWallet, setRedactOwnerWallet] = useState(false);
+  const [redactEvidence, setRedactEvidence] = useState(false);
 
   useEffect(() => {
     api<{ agencies: any[] }>("/api/auth/sso/agencies")
@@ -102,12 +104,33 @@ export default function AuthorityPage() {
           propertyId: caseData.property.id,
           caseRefPlaceholder: caseRef || undefined,
           authorityUseAcknowledged: true,
+          redactOwnerWallet,
+          redactEvidence,
         },
       });
       setExportId(res.export.id);
       setMsg(`${res.export.watermark}\n${res.note}`);
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Failed");
+    }
+  }
+
+  async function downloadPack() {
+    if (!address || !exportId) return;
+    try {
+      const data = await api<any>(`/api/authority/exports/${exportId}/download`, {
+        wallet: address,
+      });
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `zikkaron-case-pack-${exportId}.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setMsg("Case pack downloaded. Preserve the manifest hash with the export.");
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Download failed");
     }
   }
 
@@ -251,6 +274,22 @@ export default function AuthorityPage() {
               onChange={(e) => setCaseRef(e.target.value)}
               placeholder="DEMO-CASE-42"
             />
+            <label style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
+              <input
+                type="checkbox"
+                checked={redactOwnerWallet}
+                onChange={(e) => setRedactOwnerWallet(e.target.checked)}
+              />
+              <span className="muted">Redact owner wallet from export</span>
+            </label>
+            <label style={{ display: "flex", gap: "0.5rem", marginBottom: "0.85rem" }}>
+              <input
+                type="checkbox"
+                checked={redactEvidence}
+                onChange={(e) => setRedactEvidence(e.target.checked)}
+              />
+              <span className="muted">Redact evidence CIDs and hashes from export</span>
+            </label>
             <label style={{ display: "flex", gap: "0.5rem", marginBottom: "0.85rem" }}>
               <input type="checkbox" required defaultChecked />
               <span className="muted">
@@ -262,6 +301,11 @@ export default function AuthorityPage() {
               <button className="btn accent" type="button" onClick={exportPack}>
                 Download / log case pack
               </button>
+              {exportId && (
+                <button className="btn secondary" type="button" onClick={downloadPack}>
+                  Download logged export JSON
+                </button>
+              )}
               <button className="btn secondary" type="button" onClick={acknowledge}>
                 Acknowledge receipt (simulated)
               </button>

@@ -141,8 +141,22 @@ describe("Zikkaron backend happy paths", { timeout: 30000 }, () => {
     });
     assert.equal(selfAssigned.status, 403);
 
+    const existingAdmin = await api("/api/users/me", { wallet: ADMIN });
+    if (existingAdmin.status === 404) {
+      const bootstrap = await api("/api/users/register", {
+        method: "POST",
+        wallet: ADMIN,
+        body: { role: "admin" },
+      });
+      assert.equal(bootstrap.status, 201, JSON.stringify(bootstrap.data));
+      assert.equal(bootstrap.data.user.roleApproved, true);
+    } else {
+      assert.equal(existingAdmin.status, 200, JSON.stringify(existingAdmin.data));
+      assert.equal(existingAdmin.data.user.role, "admin");
+      assert.equal(existingAdmin.data.user.roleApproved, true);
+    }
+
     for (const [wallet, role, extra] of [
-      [ADMIN, "admin", {}],
       [OWNER, "seller", { kycPayload: "owner-demo-kyc" }],
       [BUYER, "buyer", { kycPayload: "buyer-demo-kyc" }],
     ]) {
@@ -256,6 +270,42 @@ describe("Zikkaron backend happy paths", { timeout: 30000 }, () => {
     assert.equal(notified.status, 201);
   });
 
+  it("ingests evidence metadata and creates an expiring owner share", async () => {
+    if (!healthOk) return;
+    const contentBase64 = Buffer.from("%PDF-1.4 demo evidence").toString("base64");
+    const document = await api("/api/documents", {
+      method: "POST",
+      wallet: OWNER,
+      body: {
+        propertyId,
+        docType: "incident_evidence",
+        filename: "incident.pdf",
+        mimeType: "application/pdf",
+        contentBase64,
+      },
+    });
+    assert.equal(document.status, 201, JSON.stringify(document.data));
+    assert.equal(document.data.document.scan_status, "simulated_clean");
+    assert.match(document.data.document.content_hash, /^[a-f0-9]{64}$/);
+
+    const share = await api("/api/shares", {
+      method: "POST",
+      wallet: OWNER,
+      body: {
+        propertyId,
+        purpose: "Counsel diligence review",
+        recipientLabel: "Demo Counsel",
+        expiresInHours: 2,
+      },
+    });
+    assert.equal(share.status, 201, JSON.stringify(share.data));
+    const token = share.data.share.url.split("/").pop();
+    const shared = await api(`/api/shares/${token}`);
+    assert.equal(shared.status, 200, JSON.stringify(shared.data));
+    assert.equal(shared.data.share.purpose, "Counsel diligence review");
+    assert.equal(shared.data.documents.length, 1);
+  });
+
   it("authority case export happy path + acknowledge", async () => {
     if (!healthOk) return;
     const search = await api(`/api/authority/search?q=${propertyId}`, { wallet: AUTHORITY });
@@ -278,6 +328,13 @@ describe("Zikkaron backend happy paths", { timeout: 30000 }, () => {
     });
     assert.equal(exp.status, 201, JSON.stringify(exp.data));
     assert.match(exp.data.export.watermark, /not an official government record/i);
+    assert.match(exp.data.export.manifestHash, /^[a-f0-9]{64}$/);
+
+    const download = await api(`/api/authority/exports/${exp.data.export.id}/download`, {
+      wallet: AUTHORITY,
+    });
+    assert.equal(download.status, 200, JSON.stringify(download.data));
+    assert.equal(download.data.manifestHash, exp.data.export.manifestHash);
 
     const ack = await api("/api/authority/acknowledge", {
       method: "POST",

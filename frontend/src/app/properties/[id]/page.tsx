@@ -14,6 +14,10 @@ export default function PropertyDetailPage() {
   const [legalRecordId, setLegalRecordId] = useState("");
   const [instrument, setInstrument] = useState("");
   const [matchConfirmed, setMatchConfirmed] = useState(true);
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
+  const [evidenceType, setEvidenceType] = useState("incident_evidence");
+  const [sharePurpose, setSharePurpose] = useState("");
+  const [shareUrl, setShareUrl] = useState("");
 
   async function load() {
     const d = await api(`/api/properties/${id}`);
@@ -43,6 +47,61 @@ export default function PropertyDetailPage() {
       await load();
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Failed");
+    }
+  }
+
+  async function uploadEvidence(e: FormEvent) {
+    e.preventDefault();
+    if (!address) return connect();
+    if (!evidenceFile) {
+      setMsg("Choose a PDF, PNG, JPEG, text, or JSON file first.");
+      return;
+    }
+    try {
+      const contentBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error("Could not read file"));
+        reader.readAsDataURL(evidenceFile);
+      });
+      const result = await api<any>("/api/documents", {
+        method: "POST",
+        wallet: address,
+        body: {
+          propertyId: id,
+          docType: evidenceType,
+          filename: evidenceFile.name,
+          mimeType: evidenceFile.type || "application/octet-stream",
+          contentBase64,
+        },
+      });
+      setMsg(
+        `Evidence stored as ${result.document.storage_mode}. SHA-256: ${result.document.content_hash}`
+      );
+      setEvidenceFile(null);
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Upload failed");
+    }
+  }
+
+  async function createShare(e: FormEvent) {
+    e.preventDefault();
+    if (!address) return connect();
+    try {
+      const result = await api<any>("/api/shares", {
+        method: "POST",
+        wallet: address,
+        body: {
+          propertyId: id,
+          purpose: sharePurpose,
+          expiresInHours: 72,
+        },
+      });
+      setShareUrl(result.share.url);
+      setMsg("Share link created. Anyone with it can view the memorial until expiry.");
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Share creation failed");
     }
   }
 
@@ -90,6 +149,45 @@ export default function PropertyDetailPage() {
             </li>
           ))}
         </ul>
+      </div>
+
+      <div className="panel">
+        <h3>Evidence & owner share</h3>
+        <p className="muted">
+          Uploads are scanned with a simulated validator and pinned to IPFS when configured.
+          Otherwise only a clearly labeled SHA-256 fallback is recorded.
+        </p>
+        <form onSubmit={uploadEvidence}>
+          <label className="label">Evidence type</label>
+          <select value={evidenceType} onChange={(e) => setEvidenceType(e.target.value)}>
+            <option value="incident_evidence">incident_evidence</option>
+            <option value="notice">notice</option>
+            <option value="deed">deed</option>
+            <option value="lease">lease</option>
+          </select>
+          <label className="label">File</label>
+          <input
+            type="file"
+            accept=".pdf,.png,.jpg,.jpeg,.txt,.json"
+            onChange={(e) => setEvidenceFile(e.target.files?.[0] || null)}
+          />
+          <button className="btn" type="submit">
+            Upload evidence
+          </button>
+        </form>
+        <form onSubmit={createShare} style={{ marginTop: "1.25rem" }}>
+          <label className="label">Share purpose</label>
+          <input
+            required
+            value={sharePurpose}
+            onChange={(e) => setSharePurpose(e.target.value)}
+            placeholder="Counsel diligence review"
+          />
+          <button className="btn secondary" type="submit">
+            Create 72-hour share link
+          </button>
+          {shareUrl && <p className="muted">Share URL: {shareUrl}</p>}
+        </form>
       </div>
 
       <div className="panel">

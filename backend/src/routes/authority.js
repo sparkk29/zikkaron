@@ -1,4 +1,5 @@
 const express = require("express");
+const crypto = require("crypto");
 const { z } = require("zod");
 const { query } = require("../db/pool");
 const { requireWallet, requireRole } = require("../middleware/auth");
@@ -74,6 +75,8 @@ const exportSchema = z.object({
   agencyId: z.string().uuid().optional(),
   caseRefPlaceholder: z.string().max(120).optional(),
   authorityUseAcknowledged: z.literal(true),
+  redactOwnerWallet: z.boolean().default(false),
+  redactEvidence: z.boolean().default(false),
 });
 
 router.post(
@@ -86,26 +89,33 @@ router.post(
       const casePack = await buildCasePack(body.propertyId);
       if (!casePack) return res.status(404).json({ error: "Property not found" });
 
-      const snapshot = {
-        ...casePack,
+      const redactedPack = redactCasePack(casePack, body);
+      const snapshotWithoutManifest = {
+        ...redactedPack,
         exportedToRole: "authority_officer",
         agencyName: req.user.agency_name,
         caseRefPlaceholder: body.caseRefPlaceholder || null,
         exportedAt: new Date().toISOString(),
         watermark: "Zikkaron memorial export — assistive; not an official government record.",
       };
+      const manifestHash = crypto
+        .createHash("sha256")
+        .update(JSON.stringify(snapshotWithoutManifest))
+        .digest("hex");
+      const snapshot = { ...snapshotWithoutManifest, manifestHash };
 
       const result = await query(
         `INSERT INTO authority_case_exports
            (property_id, agency_id, actor_wallet, case_ref_placeholder,
-            authority_use_acknowledged, payload_snapshot)
-         VALUES ($1,$2,$3,$4,TRUE,$5) RETURNING *`,
+            authority_use_acknowledged, payload_snapshot, manifest_hash, format)
+         VALUES ($1,$2,$3,$4,TRUE,$5,$6,'json') RETURNING *`,
         [
           body.propertyId,
           body.agencyId || req.user.agency_id || null,
           req.wallet,
           body.caseRefPlaceholder || null,
           snapshot,
+          manifestHash,
         ]
       );
 
@@ -125,9 +135,46 @@ router.post(
           createdAt: result.rows[0].created_at,
           watermark: result.rows[0].watermark,
           caseRefPlaceholder: result.rows[0].case_ref_placeholder,
+          manifestHash: result.rows[0].manifest_hash,
+          format: result.rows[0].format,
         },
         pack: snapshot,
         note: "For official investigation / case support; handle under agency policy.",
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+router.get(
+  "/exports/:exportId/download",
+  requireWallet,
+  requireRole("authority_officer", "admin"),
+  async (req, res, next) => {
+    try {
+      const result = await query(
+        `SELECT id, property_id, case_ref_placeholder, payload_snapshot,
+                manifest_hash, watermark, created_at
+         FROM authority_case_exports WHERE id = $1`,
+        [req.params.exportId]
+      );
+      if (!result.rows[0]) return res.status(404).json({ error: "Export not found" });
+      const exportRow = result.rows[0];
+      await writeAudit(req.wallet, "authority.export_download", "authority_case_export", exportRow.id, {});
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="zikkaron-case-pack-${exportRow.id}.json"`
+      );
+      res.json({
+        exportId: exportRow.id,
+        propertyId: exportRow.property_id,
+        caseRefPlaceholder: exportRow.case_ref_placeholder,
+        manifestHash: exportRow.manifest_hash,
+        watermark: exportRow.watermark,
+        createdAt: exportRow.created_at,
+        pack: exportRow.payload_snapshot,
       });
     } catch (err) {
       next(err);
@@ -199,7 +246,7 @@ async function buildCasePack(propertyId) {
   const prop = propResult.rows[0];
   if (!prop) return null;
 
-  const [occupants, events, disputes, legal, exports_] = await Promise.all([
+  const [occupants, events, disputes, legal, exports_, documents] = await Promise.all([
     query(
       `SELECT id, occupant_name, occupant_wallet, relationship, lease_cid, active, created_at
        FROM authorized_occupants WHERE property_id = $1 ORDER BY created_at`,
@@ -226,6 +273,12 @@ async function buildCasePack(propertyId) {
        WHERE property_id = $1 ORDER BY created_at DESC LIMIT 10`,
       [prop.id]
     ),
+    query(
+      `SELECT id, doc_type, cid, content_hash, filename, mime_type, byte_size,
+              scan_status, storage_mode, created_at
+       FROM documents WHERE property_id = $1 ORDER BY created_at DESC`,
+      [prop.id]
+    ),
   ]);
 
   return {
@@ -243,7 +296,33 @@ async function buildCasePack(propertyId) {
     incidentTimeline: events.rows,
     legalRecordPlaceholders: legal.rows,
     priorExports: exports_.rows,
+    documents: documents.rows,
   };
+}
+
+function redactCasePack(pack, options) {
+  const redacted = JSON.parse(JSON.stringify(pack));
+  if (options.redactOwnerWallet) {
+    redacted.owner.wallet = "[REDACTED]";
+    redacted.property.ownerWallet = "[REDACTED]";
+    redacted.incidentTimeline = redacted.incidentTimeline.map((event) => ({
+      ...event,
+      actor_wallet: "[REDACTED]",
+    }));
+  }
+  if (options.redactEvidence) {
+    redacted.incidentTimeline = redacted.incidentTimeline.map((event) => ({
+      ...event,
+      evidence_cid: null,
+      evidence_hash: null,
+    }));
+    redacted.documents = redacted.documents.map((document) => ({
+      ...document,
+      cid: null,
+      content_hash: null,
+    }));
+  }
+  return redacted;
 }
 
 module.exports = router;

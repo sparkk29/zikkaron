@@ -15,6 +15,8 @@ Key routes:
 - `/api/properties/*` memorials + simulated legal verify
 - `/api/occupancy/*` occupants, events, disputes
 - `/api/authority/*` search, case, exports, acknowledge
+- `/api/documents/*` validated evidence ingestion and document metadata
+- `/api/shares/*` expiring owner-created memorial share links
 - `/api/deals/*` purchase deals
 - `/api/admin/*` queue + audit
 
@@ -27,3 +29,6 @@ bootstrap flag. Privileged roles must thereafter be granted through `POST /api/u
 
 Simulated agency SSO requires `ALLOW_SIMULATED_SSO=true` and an authenticated session; it is not
 an identity-provider assertion.
+
+Evidence upload uses IPFS when `IPFS_API_URL` is configured. If IPFS is unavailable and
+`IPFS_UPLOAD_REQUIRED=false`, the API records a clearly labeled SHA-256-only fallback.
