@@ -20,7 +20,7 @@ async function api(path, { method = "GET", wallet, token, body } = {}) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
-  return { status: res.status, data };
+  return { status: res.status, data, headers: res.headers };
 }
 
 describe("Zikkaron SIWE auth", { timeout: 30000 }, () => {
@@ -125,11 +125,22 @@ describe("Zikkaron backend happy paths", { timeout: 30000 }, () => {
 
   it("health reports product Zikkaron and country US", async () => {
     if (!healthOk) return;
-    const { status, data } = await api("/health");
-    assert.equal(status, 200);
-    assert.equal(data.product, "Zikkaron");
-    assert.equal(data.country, "US");
-    assert.equal(data.auth.siwe, true);
+    const health = await api("/health");
+    assert.equal(health.status, 200);
+    assert.equal(health.data.product, "Zikkaron");
+    assert.equal(health.data.country, "US");
+    assert.equal(health.data.auth.siwe, true);
+    assert.equal(health.data.dependencies.database, "up");
+    assert.ok(health.headers.get("x-request-id"));
+  });
+
+  it("exposes operational metrics and honors request correlation", async () => {
+    if (!healthOk) return;
+    const metrics = await api("/metrics");
+    assert.equal(metrics.status, 200);
+    assert.equal(metrics.data.product, "Zikkaron");
+    assert.ok(metrics.data.totalRequests >= 1);
+    assert.ok(metrics.data.byStatus["200"] >= 1);
   });
 
   it("registers KYC hashes for owner, admin, authority", async () => {

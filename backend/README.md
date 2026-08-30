@@ -37,3 +37,6 @@ Evidence upload uses IPFS when `IPFS_API_URL` is configured. If IPFS is unavaila
 Authority exports are scoped to the officer's agency, carry a retention deadline, support
 redaction, and can be revoked. Admin retention purge redacts expired payloads while preserving
 audit metadata.
+
+Operational endpoints: `GET /health`, `GET /metrics`, and `x-request-id` response headers.
+See [`docs/OPERATIONS.md`](../docs/OPERATIONS.md).

@@ -1,0 +1,72 @@
+name: Zikkaron CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run contracts:compile
+      - run: npm run contracts:test
+
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: zikkaron
+          POSTGRES_PASSWORD: zikkaron
+          POSTGRES_DB: zikkaron
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U zikkaron -d zikkaron"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://zikkaron:zikkaron@127.0.0.1:5432/zikkaron
+      ALLOW_HEADER_AUTH: "true"
+      ALLOW_PRIVILEGED_BOOTSTRAP: "true"
+      ALLOW_SIMULATED_SSO: "true"
+      AUTH_RATE_LIMIT: "200"
+      BOOTSTRAP_ADMIN_WALLET: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      GOV_LOOKUP_ADAPTER: simulated
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run migrate -w zikkaron-backend
+      - run: |
+          npm run backend:dev > /tmp/zikkaron-backend.log 2>&1 &
+          for attempt in {1..30}; do
+            curl --fail --silent http://127.0.0.1:4000/health && exit 0
+            sleep 1
+          done
+          cat /tmp/zikkaron-backend.log
+          exit 1
+      - run: npm run backend:test
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w zikkaron-frontend
