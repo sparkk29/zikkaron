@@ -20,8 +20,11 @@ export function Nav() {
   return (
     <nav className="nav">
       <Link href="/" className="brand">
-        Zikkaron
-        <span>Memorial records assisting owners and government authorities</span>
+        <img src="/logo.svg" alt="" width={48} height={48} />
+        <span className="brand-text">
+          Zikkaron
+          <span>Memorial records assisting owners and government authorities</span>
+        </span>
       </Link>
       <div className="nav-links">
         <Link href="/properties">Properties</Link>
