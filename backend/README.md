@@ -7,7 +7,13 @@ docker compose up -d
 npm run dev -w zikkaron-backend
 npm run test -w zikkaron-backend       # requires API running; fails if unreachable
 npm run test:unit -w zikkaron-backend  # config guard tests, no server needed
+npm run seed:demo -w zikkaron-backend  # local demo data; needs the demo flags below
 ```
+
+`seed:demo` calls the running API with header auth, so start it locally with
+`ALLOW_HEADER_AUTH=true ALLOW_PRIVILEGED_BOOTSTRAP=true
+BOOTSTRAP_ADMIN_WALLET=0x4426b8aaf0946a4e55e30a7e968c380024acbd62`. It is idempotent, prints
+the public demo wallets, and must never be pointed at a shared environment.
 
 Key routes:
 

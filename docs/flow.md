@@ -12,6 +12,11 @@ flowchart TD
     F --> G[Real-world LE / court process outside Zikkaron]
 ```
 
+The owner's side of this flow — timeline entries, evidence upload, and a dispute awaiting
+admin / authority review:
+
+![Owner property view with incident timeline](screenshots/property-owner-view.jpg)
+
 ## Recorder assist (simulated)
 
 ```mermaid
@@ -55,6 +60,24 @@ sequenceDiagram
     API->>DB: authority_acknowledgements + agency_ack_received event
 ```
 
+![Authority Console search, case view, and case pack export](screenshots/authority-console.jpg)
+
 ## Purchase deal (testnet)
 
 Seller opens deal with `disclaimerAccepted` + `fraudWarningAcknowledged`. API soft-warns on unverified KYC, elevated fraud risk, paused listings, open disputes. Reminders: TESTNET FUNDS, NOT A CLOSING; wire-fraud out-of-band verification.
+
+Both acknowledgments are separate checkboxes, and the submit button stays disabled until both are checked:
+
+![Buy / Sell testnet escrow form](screenshots/buy-sell.jpg)
+
+## Dispute review
+
+```mermaid
+flowchart LR
+    S[Non-owner opens dispute] --> P[pending_review: listing unchanged]
+    O[Owner or approved authority opens dispute] --> Op[open: listing paused]
+    P -->|admin / authority PATCH open| Op
+    Op -->|admin / authority resolve or dismiss| R[Listing unpaused when no open disputes remain]
+```
+
+Owners cannot change occupancy status while an open dispute exists.

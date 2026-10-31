@@ -8,7 +8,8 @@
     "start": "node src/index.js",
     "test": "node --test test/config.test.js test/api.test.js",
     "test:unit": "node --test test/config.test.js",
-    "migrate": "node src/db/migrate.js"
+    "migrate": "node src/db/migrate.js",
+    "seed:demo": "node scripts/seed-demo.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

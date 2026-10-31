@@ -89,6 +89,12 @@ owner / approved-role check used by property, occupancy, document, share, lookup
 | Owner | Full | Full | Full |
 | Approved admin / authority / title officer | Full | Full | Full |
 
+What an anonymous visitor sees versus the owner of the same property:
+
+| Public view | Owner view |
+|-------------|------------|
+| ![Public property view](screenshots/property-public-view.jpg) | ![Owner property view](screenshots/property-owner-view.jpg) |
+
 Disputes from anyone other than the owner or an approved authority start as `pending_review`
 and do not pause the listing. `PATCH /api/occupancy/disputes/:id` (admin, authority, title
 officer) opens, resolves, or dismisses them; owners cannot change occupancy status while an

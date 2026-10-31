@@ -121,6 +121,7 @@ export default function PropertyDetailPage() {
 
   if (!data) return <p className="muted">Loading… {msg}</p>;
   const p = data.property;
+  const isPublic = data.access === "public";
 
   return (
     <section>
@@ -136,110 +137,114 @@ export default function PropertyDetailPage() {
         )}
         {data.openDisputeCount > 0 && <span className="tag">open disputes</span>}
       </p>
-      {data.access === "public" && <div className="warn-box">{data.notice}</div>}
+      {isPublic && <div className="warn-box">{data.notice}</div>}
 
-      <div className="panel">
-        <h3>Authorized occupants</h3>
-        {data.authorizedOccupants?.length ? (
-          <ul>
-            {data.authorizedOccupants.map((o: any) => (
-              <li key={o.id}>
-                {o.occupant_name} {o.relationship ? `(${o.relationship})` : ""}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="muted">None registered — may show vacant_secured.</p>
-        )}
-      </div>
-
-      <div className="panel">
-        <h3>Incident timeline</h3>
-        <ul className="timeline">
-          {data.occupancyEvents?.map((ev: any) => (
-            <li key={ev.id}>
-              <strong>{ev.event_type}</strong>
-              <div className="muted">{new Date(ev.created_at).toLocaleString()}</div>
-              <div>{ev.note}</div>
-              {ev.evidence_cid && <div className="muted">CID {ev.evidence_cid}</div>}
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      <div className="panel">
-        <h3>Evidence & owner share</h3>
-        <p className="muted">
-          Uploads are scanned with a simulated validator and pinned to IPFS when configured.
-          Otherwise only a clearly labeled SHA-256 fallback is recorded.
-        </p>
-        <form onSubmit={uploadEvidence}>
-          <label className="label">Evidence type</label>
-          <select value={evidenceType} onChange={(e) => setEvidenceType(e.target.value)}>
-            <option value="incident_evidence">incident_evidence</option>
-            <option value="notice">notice</option>
-            <option value="deed">deed</option>
-            <option value="lease">lease</option>
-          </select>
-          <label className="label">File</label>
-          <input
-            key={fileInputKey}
-            type="file"
-            accept=".pdf,.png,.jpg,.jpeg,.txt,.json"
-            onChange={(e) => setEvidenceFile(e.target.files?.[0] || null)}
-          />
-          <button className="btn" type="submit">
-            Upload evidence
-          </button>
-        </form>
-        <form onSubmit={createShare} style={{ marginTop: "1.25rem" }}>
-          <label className="label">Share purpose</label>
-          <input
-            required
-            value={sharePurpose}
-            onChange={(e) => setSharePurpose(e.target.value)}
-            placeholder="Counsel diligence review"
-          />
-          <button className="btn secondary" type="submit">
-            Create 72-hour share link
-          </button>
-          {shareUrl && <p className="muted">Share URL: {shareUrl}</p>}
-        </form>
-      </div>
-
-      <div className="panel">
-        <h3>Legal record placeholders</h3>
-        {data.legalRecords?.map((lr: any) => (
-          <div key={lr.id} style={{ marginBottom: "0.75rem" }}>
-            <div>CID {lr.document_cid}</div>
-            <div className="muted">
-              Official county record flag: {String(lr.is_official_county_record)} (default false
-              until simulated verify)
-            </div>
+      {!isPublic && (
+        <>
+          <div className="panel">
+            <h3>Authorized occupants</h3>
+            {data.authorizedOccupants?.length ? (
+              <ul>
+                {data.authorizedOccupants.map((o: any) => (
+                  <li key={o.id}>
+                    {o.occupant_name} {o.relationship ? `(${o.relationship})` : ""}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="muted">None registered — may show vacant_secured.</p>
+            )}
           </div>
-        ))}
-        <form onSubmit={simulateVerify}>
-          <p className="muted">
-            Title officer / authority: human-in-the-loop simulated county verify (stand-in for
-            recorder workflow).
-          </p>
-          <label className="label">Legal record id</label>
-          <input value={legalRecordId} onChange={(e) => setLegalRecordId(e.target.value)} />
-          <label className="label">Instrument # placeholder</label>
-          <input value={instrument} onChange={(e) => setInstrument(e.target.value)} />
-          <label style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem" }}>
-            <input
-              type="checkbox"
-              checked={matchConfirmed}
-              onChange={(e) => setMatchConfirmed(e.target.checked)}
-            />
-            Match confirmed (uncheck to open dispute on mismatch)
-          </label>
-          <button className="btn" type="submit">
-            Simulated verify
-          </button>
-        </form>
-      </div>
+
+          <div className="panel">
+            <h3>Incident timeline</h3>
+            <ul className="timeline">
+              {data.occupancyEvents?.map((ev: any) => (
+                <li key={ev.id}>
+                  <strong>{ev.event_type}</strong>
+                  <div className="muted">{new Date(ev.created_at).toLocaleString()}</div>
+                  <div>{ev.note}</div>
+                  {ev.evidence_cid && <div className="muted">CID {ev.evidence_cid}</div>}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="panel">
+            <h3>Evidence & owner share</h3>
+            <p className="muted">
+              Uploads are scanned with a simulated validator and pinned to IPFS when configured.
+              Otherwise only a clearly labeled SHA-256 fallback is recorded.
+            </p>
+            <form onSubmit={uploadEvidence}>
+              <label className="label">Evidence type</label>
+              <select value={evidenceType} onChange={(e) => setEvidenceType(e.target.value)}>
+                <option value="incident_evidence">incident_evidence</option>
+                <option value="notice">notice</option>
+                <option value="deed">deed</option>
+                <option value="lease">lease</option>
+              </select>
+              <label className="label">File</label>
+              <input
+                key={fileInputKey}
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg,.txt,.json"
+                onChange={(e) => setEvidenceFile(e.target.files?.[0] || null)}
+              />
+              <button className="btn" type="submit">
+                Upload evidence
+              </button>
+            </form>
+            <form onSubmit={createShare} style={{ marginTop: "1.25rem" }}>
+              <label className="label">Share purpose</label>
+              <input
+                required
+                value={sharePurpose}
+                onChange={(e) => setSharePurpose(e.target.value)}
+                placeholder="Counsel diligence review"
+              />
+              <button className="btn secondary" type="submit">
+                Create 72-hour share link
+              </button>
+              {shareUrl && <p className="muted">Share URL: {shareUrl}</p>}
+            </form>
+          </div>
+
+          <div className="panel">
+            <h3>Legal record placeholders</h3>
+            {data.legalRecords?.map((lr: any) => (
+              <div key={lr.id} style={{ marginBottom: "0.75rem" }}>
+                <div>CID {lr.document_cid}</div>
+                <div className="muted">
+                  Official county record flag: {String(lr.is_official_county_record)} (default false
+                  until simulated verify)
+                </div>
+              </div>
+            ))}
+            <form onSubmit={simulateVerify}>
+              <p className="muted">
+                Title officer / authority: human-in-the-loop simulated county verify (stand-in for
+                recorder workflow).
+              </p>
+              <label className="label">Legal record id</label>
+              <input value={legalRecordId} onChange={(e) => setLegalRecordId(e.target.value)} />
+              <label className="label">Instrument # placeholder</label>
+              <input value={instrument} onChange={(e) => setInstrument(e.target.value)} />
+              <label style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem" }}>
+                <input
+                  type="checkbox"
+                  checked={matchConfirmed}
+                  onChange={(e) => setMatchConfirmed(e.target.checked)}
+                />
+                Match confirmed (uncheck to open dispute on mismatch)
+              </label>
+              <button className="btn" type="submit">
+                Simulated verify
+              </button>
+            </form>
+          </div>
+        </>
+      )}
 
       {data.disputes?.length > 0 && (
         <div className="warn-box">

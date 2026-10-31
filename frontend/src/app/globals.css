@@ -251,6 +251,18 @@ textarea {
   color: var(--ink);
 }
 
+input[type="checkbox"],
+input[type="radio"] {
+  width: auto;
+  flex: none;
+  margin: 0.2rem 0 0;
+}
+
+button.panel {
+  font: inherit;
+  color: inherit;
+}
+
 .form-row {
   display: grid;
   gap: 0.75rem;

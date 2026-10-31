@@ -80,6 +80,37 @@ The logo is a **cornerstone**: a house outline whose foundation corner is a soli
 - GitHub Actions CI for contracts (tests + Slither), backend (against Postgres), and frontend build.
 - Frontend CSP, `X-Frame-Options`, `Referrer-Policy`, and `Permissions-Policy` headers.
 
+## Screenshots
+
+All data shown is fictional demo data from `npm run seed:demo`. See [docs/screenshots](docs/screenshots/README.md) to regenerate.
+
+**Landing page** — the partnership banner stays on every page.
+
+![Zikkaron landing page](docs/screenshots/home.jpg)
+
+**Owner property view** — incident timeline, evidence upload, unofficial legal-record placeholders, and a dispute waiting for review.
+
+![Owner view of a property memorial](docs/screenshots/property-owner-view.jpg)
+
+**Public property view** — anonymous visitors see the listing only; occupants, timeline, disputes, and legal records are withheld.
+
+![Public view of a property memorial](docs/screenshots/property-public-view.jpg)
+
+**Authority Console** — APN search, read-only case view, and a case-pack export that stays disabled until authorized use is acknowledged.
+
+![Authority Console case view](docs/screenshots/authority-console.jpg)
+
+<details>
+<summary>More screens: listings, testnet escrow, admin</summary>
+
+![Property listings and memorial registration](docs/screenshots/properties-list.jpg)
+
+![Buy / Sell testnet escrow with required acknowledgments](docs/screenshots/buy-sell.jpg)
+
+![Admin queue and audit log](docs/screenshots/admin.jpg)
+
+</details>
+
 ## Monorepo
 
 ```
@@ -87,7 +118,8 @@ zikkaron/
 ├── contracts/   # zikkaron-contracts — Solidity 0.8.24, Hardhat, OpenZeppelin upgradeable, Polygon Amoy
 ├── backend/     # zikkaron-backend — Express + PostgreSQL, SIWE, authority APIs, migrations 001–007
 ├── frontend/    # zikkaron-frontend — Next.js 14 App Router + MetaMask + SIWE
-├── docs/        # Partnerships, threat model, flows, operations, brand assets
+├── docs/        # Partnerships, threat model, flows, operations, brand assets, screenshots
+├── scripts/     # Repo tooling (screenshot capture)
 └── .github/     # CI workflow
 ```
 
@@ -126,6 +158,10 @@ npm run frontend:dev
 - Metrics: `http://localhost:4000/metrics`
 - App: `http://localhost:3000`
 - Authority Console: `http://localhost:3000/authority`
+
+### Demo data
+
+With the API running locally under the demo flags (`ALLOW_HEADER_AUTH=true`, `ALLOW_PRIVILEGED_BOOTSTRAP=true`, and `BOOTSTRAP_ADMIN_WALLET=0x4426b8aaf0946a4e55e30a7e968c380024acbd62`), `npm run seed:demo -w zikkaron-backend` creates an admin, an owner, a sheriff's-office officer, three Arizona properties, an incident timeline, evidence, a pending dispute, a testnet deal, and an authority case. It is idempotent and prints the demo wallet addresses. Those wallets are derived from public strings — local demos only.
 
 ### First admin
 
@@ -205,6 +241,7 @@ Backend API tests expect `ALLOW_HEADER_AUTH=true`, `ALLOW_PRIVILEGED_BOOTSTRAP=t
 | [docs/futureimplementation.md](docs/futureimplementation.md) | MoUs, production SSO, county adapters, CJIS |
 | [docs/discussion.md](docs/discussion.md) | Product discussion |
 | [docs/BRAND.md](docs/BRAND.md) | Brand, tone, and logo |
+| [docs/screenshots](docs/screenshots/README.md) | UI screenshots and how to regenerate them |
 
 ## License
 
