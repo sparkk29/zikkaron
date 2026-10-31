@@ -22,6 +22,7 @@ export default function PropertiesPage() {
   const { address, connect } = useWallet();
   const [properties, setProperties] = useState<Property[]>([]);
   const [msg, setMsg] = useState("");
+  const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
   const [form, setForm] = useState({
     addressLine1: "",
     city: "",
@@ -47,6 +48,10 @@ export default function PropertiesPage() {
   async function onCreate(e: FormEvent) {
     e.preventDefault();
     if (!address) return connect();
+    if (!disclaimerAccepted) {
+      setMsg("Accept the memorial disclaimer before creating a record.");
+      return;
+    }
     setMsg("");
     try {
       await api("/api/properties", {
@@ -55,7 +60,7 @@ export default function PropertiesPage() {
         body: {
           ...form,
           listPriceUsd: form.listPriceUsd ? Number(form.listPriceUsd) : undefined,
-          disclaimerAccepted: true,
+          disclaimerAccepted,
         },
       });
       setMsg("Property memorial created. Not legal title.");
@@ -159,13 +164,18 @@ export default function PropertiesPage() {
           onChange={(e) => setForm({ ...form, legalDescription: e.target.value })}
         />
         <label style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start" }}>
-          <input type="checkbox" required defaultChecked />
+          <input
+            type="checkbox"
+            required
+            checked={disclaimerAccepted}
+            onChange={(e) => setDisclaimerAccepted(e.target.checked)}
+          />
           <span className="muted">
             I accept that this is a memorial record only — not title transfer, not an official
             government filing.
           </span>
         </label>
-        <button className="btn accent" type="submit">
+        <button className="btn accent" type="submit" disabled={!disclaimerAccepted}>
           Create memorial
         </button>
       </form>

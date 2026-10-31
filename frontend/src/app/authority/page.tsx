@@ -1,11 +1,11 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { api, setSessionToken } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useWallet } from "@/lib/wallet";
 
 export default function AuthorityPage() {
-  const { address, connect } = useWallet();
+  const { address, connect, refreshSession } = useWallet();
   const [q, setQ] = useState("");
   const [results, setResults] = useState<any[]>([]);
   const [caseData, setCaseData] = useState<any>(null);
@@ -16,6 +16,7 @@ export default function AuthorityPage() {
   const [selectedAgency, setSelectedAgency] = useState("");
   const [redactOwnerWallet, setRedactOwnerWallet] = useState(false);
   const [redactEvidence, setRedactEvidence] = useState(false);
+  const [authorityUseAcknowledged, setAuthorityUseAcknowledged] = useState(false);
 
   useEffect(() => {
     api<{ agencies: any[] }>("/api/auth/sso/agencies")
@@ -31,25 +32,24 @@ export default function AuthorityPage() {
     if (!selectedAgency) return;
     try {
       const res = await api<{
-        token: string;
         notice: string;
-        user: { agencyName: string; role: string };
+        user: { agencyName: string; role: string; roleApproved: boolean };
         authMethod: string;
       }>("/api/auth/sso/simulate", {
         method: "POST",
+        wallet: address,
         body: {
           agencyId: selectedAgency,
           walletAddress: address,
           displayName: "Agency Officer (SSO stub)",
           subjectPlaceholder: "DEMO-SSO-SUB",
         },
-        token: null,
       });
-      setSessionToken(res.token);
+      await refreshSession();
       setMsg(
-        `${res.notice}\nBound to ${res.user.agencyName} as ${res.user.role} (${res.authMethod})`
+        `${res.notice}\nBound to ${res.user.agencyName} as ${res.user.role} (${res.authMethod})` +
+          (res.user.roleApproved ? "" : "\nRole pending administrator approval.")
       );
-      window.location.reload();
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "SSO simulate failed");
     }
@@ -63,7 +63,6 @@ export default function AuthorityPage() {
         {
           method: "POST",
           body: { agencyId: selectedAgency },
-          token: null,
         }
       );
       setMsg(`${res.notice}\nPlaceholder authorize URL:\n${res.authorizeUrlPlaceholder}`);
@@ -90,12 +89,20 @@ export default function AuthorityPage() {
 
   async function openCase(propertyId: string) {
     if (!address) return connect();
-    const data = await api(`/api/authority/case/${propertyId}`, { wallet: address });
-    setCaseData(data);
+    try {
+      const data = await api(`/api/authority/case/${propertyId}`, { wallet: address });
+      setCaseData(data);
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Failed to load case");
+    }
   }
 
   async function exportPack() {
     if (!address || !caseData) return;
+    if (!authorityUseAcknowledged) {
+      setMsg("Acknowledge authorized use before exporting a case pack.");
+      return;
+    }
     try {
       const res = await api<any>("/api/authority/exports", {
         method: "POST",
@@ -103,7 +110,7 @@ export default function AuthorityPage() {
         body: {
           propertyId: caseData.property.id,
           caseRefPlaceholder: caseRef || undefined,
-          authorityUseAcknowledged: true,
+          authorityUseAcknowledged,
           redactOwnerWallet,
           redactEvidence,
         },
@@ -229,7 +236,7 @@ export default function AuthorityPage() {
             </p>
             <p className="muted">
               KYC {caseData.owner.kycVerified ? "verified" : "unverified"} · fraud risk{" "}
-              {caseData.owner.fraudRiskLevel || "n/a"} · hash {caseData.owner.kycHash || "—"}
+              {caseData.owner.fraudRiskLevel || "n/a"}
             </p>
             <h4>Authorized occupants</h4>
             <ul>
@@ -291,14 +298,23 @@ export default function AuthorityPage() {
               <span className="muted">Redact evidence CIDs and hashes from export</span>
             </label>
             <label style={{ display: "flex", gap: "0.5rem", marginBottom: "0.85rem" }}>
-              <input type="checkbox" required defaultChecked />
+              <input
+                type="checkbox"
+                checked={authorityUseAcknowledged}
+                onChange={(e) => setAuthorityUseAcknowledged(e.target.checked)}
+              />
               <span className="muted">
                 authorityUseAcknowledged — for official investigation / case support; handle under
                 agency policy.
               </span>
             </label>
             <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-              <button className="btn accent" type="button" onClick={exportPack}>
+              <button
+                className="btn accent"
+                type="button"
+                onClick={exportPack}
+                disabled={!authorityUseAcknowledged}
+              >
                 Download / log case pack
               </button>
               {exportId && (

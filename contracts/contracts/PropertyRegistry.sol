@@ -6,13 +6,20 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {ZikkaronRoles} from "./ZikkaronRoles.sol";
+import {IPropertyOwnerLookup} from "./IPropertyOwnerLookup.sol";
 
 /**
  * @title PropertyRegistry
  * @notice Memorial registry of property claims bound to APN/county placeholders. NOT legal title.
  * @dev Zikkaron assists owners and authorities with memorial records. Not title. Not eviction. Not an official government system. County recording, law enforcement, and courts remain authoritative.
  */
-contract PropertyRegistry is Initializable, AccessControlUpgradeable, UUPSUpgradeable, PausableUpgradeable {
+contract PropertyRegistry is
+    Initializable,
+    AccessControlUpgradeable,
+    UUPSUpgradeable,
+    PausableUpgradeable,
+    IPropertyOwnerLookup
+{
     enum OccupancyStatus {
         VacantSecured,
         OwnerOccupied,
@@ -34,7 +41,7 @@ contract PropertyRegistry is Initializable, AccessControlUpgradeable, UUPSUpgrad
 
     uint256 public nextPropertyId;
     mapping(uint256 => Property) public properties;
-    mapping(bytes32 => uint256) public apnToPropertyId; // keccak256(state|county|apn)
+    mapping(bytes32 => uint256) public apnToPropertyId; // apnKey(state, county, apn)
 
     event PropertyRegistered(
         uint256 indexed propertyId,
@@ -69,8 +76,8 @@ contract PropertyRegistry is Initializable, AccessControlUpgradeable, UUPSUpgrad
     ) external whenNotPaused returns (uint256 propertyId) {
         require(deedCidHash != bytes32(0), "empty deed");
         require(bytes(apn).length > 0, "apn required");
-        bytes32 apnKey = keccak256(abi.encodePacked(stateCode, "|", county, "|", apn));
-        require(apnToPropertyId[apnKey] == 0, "apn exists");
+        bytes32 key = apnKey(stateCode, county, apn);
+        require(apnToPropertyId[key] == 0, "apn exists");
 
         propertyId = nextPropertyId++;
         properties[propertyId] = Property({
@@ -84,10 +91,24 @@ contract PropertyRegistry is Initializable, AccessControlUpgradeable, UUPSUpgrad
             exists: true,
             registeredAt: uint64(block.timestamp)
         });
-        apnToPropertyId[apnKey] = propertyId;
+        apnToPropertyId[key] = propertyId;
 
         emit PropertyRegistered(propertyId, msg.sender, apn, county, stateCode, deedCidHash);
         emit OccupancyStatusUpdated(propertyId, occupancyStatus);
+    }
+
+    /// @dev abi.encode keeps field boundaries, so ("A|B", "C") and ("A", "B|C") cannot collide.
+    function apnKey(
+        string calldata stateCode,
+        string calldata county,
+        string calldata apn
+    ) public pure returns (bytes32) {
+        return keccak256(abi.encode(stateCode, county, apn));
+    }
+
+    /// @notice Memorial claimant for a property, or address(0) if it is not registered.
+    function claimedOwnerOf(uint256 propertyId) external view override returns (address) {
+        return properties[propertyId].claimedOwner;
     }
 
     function setOccupancyStatus(uint256 propertyId, OccupancyStatus status) external whenNotPaused {

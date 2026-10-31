@@ -1,8 +1,17 @@
 const express = require("express");
 const { z } = require("zod");
 const { query } = require("../db/pool");
-const { requireWallet, requireRole } = require("../middleware/auth");
+const { requireWallet, optionalWallet, requireRole } = require("../middleware/auth");
 const { writeAudit, enqueueGovJob } = require("../services/audit");
+const { getProperty, mapProperty, mapPublicProperty } = require("../services/properties");
+const {
+  PRIVILEGED_ROLES,
+  assertPropertyAccess,
+  propertyAccessLevel,
+  hasApprovedRole,
+  isOwner,
+  loadUser,
+} = require("../services/access");
 
 const router = express.Router();
 
@@ -28,24 +37,54 @@ const propertySchema = z.object({
   onchainPropertyId: z.number().int().optional(),
 });
 
-router.get("/", async (_req, res, next) => {
+const listQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+router.get("/", optionalWallet, async (req, res, next) => {
   try {
+    const { limit, offset } = listQuerySchema.parse(req.query);
     const result = await query(
       `SELECT p.*, u.fraud_risk_level AS owner_fraud_risk, u.kyc_verified AS owner_kyc_verified
        FROM properties p
        LEFT JOIN users u ON LOWER(u.wallet_address) = LOWER(p.owner_wallet)
-       ORDER BY p.created_at DESC`
+       ORDER BY p.created_at DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
     );
-    res.json({ properties: result.rows.map(mapProperty) });
+    const privileged = hasApprovedRole(await loadUser(req), PRIVILEGED_ROLES);
+    res.json({
+      properties: result.rows.map((p) =>
+        privileged || isOwner(req, p) ? mapProperty(p) : mapPublicProperty(p)
+      ),
+      limit,
+      offset,
+    });
   } catch (err) {
     next(err);
   }
 });
 
-router.get("/:id", async (req, res, next) => {
+router.get("/:id", optionalWallet, async (req, res, next) => {
   try {
     const prop = await getProperty(req.params.id);
     if (!prop) return res.status(404).json({ error: "Property not found" });
+
+    const access = await propertyAccessLevel(req, prop);
+    if (!access) {
+      const openDisputes = await query(
+        `SELECT COUNT(*)::int AS c FROM disputes WHERE property_id = $1 AND status = 'open'`,
+        [prop.id]
+      );
+      return res.json({
+        access: "public",
+        property: mapPublicProperty(prop),
+        openDisputeCount: openDisputes.rows[0].c,
+        notice:
+          "Public memorial view. Occupants, timeline, disputes, and legal records are limited to the owner and approved authorities.",
+      });
+    }
 
     const [occupants, events, disputes, legal] = await Promise.all([
       query(
@@ -63,6 +102,7 @@ router.get("/:id", async (req, res, next) => {
     ]);
 
     res.json({
+      access,
       property: mapProperty(prop),
       authorizedOccupants: occupants.rows,
       occupancyEvents: events.rows,
@@ -155,10 +195,18 @@ router.patch("/:id/occupancy", requireWallet, async (req, res, next) => {
         "unauthorized_suspected",
       ])
       .parse(req.body.occupancyStatus);
-    const prop = await getProperty(req.params.id);
-    if (!prop) return res.status(404).json({ error: "Property not found" });
-    if (prop.owner_wallet.toLowerCase() !== req.wallet) {
-      return res.status(403).json({ error: "Owner only" });
+    const { property: prop } = await assertPropertyAccess(req, req.params.id, {
+      roles: [],
+      message: "Owner only",
+    });
+    const openDisputes = await query(
+      `SELECT COUNT(*)::int AS c FROM disputes WHERE property_id = $1 AND status = 'open'`,
+      [prop.id]
+    );
+    if (openDisputes.rows[0].c > 0) {
+      return res.status(409).json({
+        error: "Open disputes must be resolved by an administrator or authority before changing occupancy status",
+      });
     }
     const result = await query(
       `UPDATE properties SET occupancy_status = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
@@ -241,40 +289,6 @@ router.post(
     }
   }
 );
-
-async function getProperty(id) {
-  const result = await query(
-    `SELECT p.*, u.fraud_risk_level AS owner_fraud_risk, u.kyc_verified AS owner_kyc_verified
-     FROM properties p
-     LEFT JOIN users u ON LOWER(u.wallet_address) = LOWER(p.owner_wallet)
-     WHERE p.id::text = $1 OR p.apn = $1`,
-    [id]
-  );
-  return result.rows[0] || null;
-}
-
-function mapProperty(p) {
-  return {
-    id: p.id,
-    onchainPropertyId: p.onchain_property_id,
-    ownerWallet: p.owner_wallet,
-    addressLine1: p.address_line1,
-    addressLine2: p.address_line2,
-    city: p.city,
-    state: p.state,
-    zip: p.zip,
-    county: p.county,
-    apn: p.apn,
-    legalDescription: p.legal_description,
-    deedCid: p.deed_cid,
-    occupancyStatus: p.occupancy_status,
-    listingPaused: p.listing_paused,
-    listPriceUsd: p.list_price_usd,
-    ownerFraudRisk: p.owner_fraud_risk,
-    ownerKycVerified: p.owner_kyc_verified,
-    createdAt: p.created_at,
-  };
-}
 
 module.exports = router;
 module.exports.getProperty = getProperty;

@@ -1,11 +1,24 @@
 const express = require("express");
 const { z } = require("zod");
 const { query } = require("../db/pool");
-const { requireWallet } = require("../middleware/auth");
+const rateLimit = require("express-rate-limit");
+const { requireWallet, requireRole } = require("../middleware/auth");
 const { writeAudit } = require("../services/audit");
-const { getProperty } = require("./properties");
+const { assertPropertyAccess, propertyAccessLevel, loadUser } = require("../services/access");
+const { getProperty } = require("../services/properties");
 
 const router = express.Router();
+
+const OWNER_ONLY = { roles: [], message: "Owner only" };
+
+const disputeLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: Number(process.env.DISPUTE_RATE_LIMIT || 5),
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req) => req.wallet,
+  message: { error: "Too many disputes opened from this wallet; try again later" },
+});
 
 const occupantSchema = z.object({
   propertyId: z.string().uuid(),
@@ -18,11 +31,7 @@ const occupantSchema = z.object({
 router.post("/occupants", requireWallet, async (req, res, next) => {
   try {
     const body = occupantSchema.parse(req.body);
-    const prop = await getProperty(body.propertyId);
-    if (!prop) return res.status(404).json({ error: "Property not found" });
-    if (prop.owner_wallet.toLowerCase() !== req.wallet) {
-      return res.status(403).json({ error: "Owner only" });
-    }
+    await assertPropertyAccess(req, body.propertyId, OWNER_ONLY);
 
     const result = await query(
       `INSERT INTO authorized_occupants
@@ -78,10 +87,11 @@ const eventSchema = z.object({
 router.post("/events", requireWallet, async (req, res, next) => {
   try {
     const body = eventSchema.parse(req.body);
-    const prop = await getProperty(body.propertyId);
-    if (!prop) return res.status(404).json({ error: "Property not found" });
-    if (prop.owner_wallet.toLowerCase() !== req.wallet) {
-      return res.status(403).json({ error: "Owner only" });
+    await assertPropertyAccess(req, body.propertyId, OWNER_ONLY);
+    if (body.eventType === "agency_ack_received") {
+      return res.status(403).json({
+        error: "agency_ack_received is recorded by the Authority Console acknowledgment flow",
+      });
     }
 
     if (body.eventType === "notice_memorialized" && !body.notLegalServiceAcknowledged) {
@@ -136,28 +146,79 @@ const disputeSchema = z.object({
   reason: z.string().min(3),
 });
 
-router.post("/disputes", requireWallet, async (req, res, next) => {
+router.post("/disputes", requireWallet, disputeLimiter, async (req, res, next) => {
   try {
     const body = disputeSchema.parse(req.body);
     const prop = await getProperty(body.propertyId);
     if (!prop) return res.status(404).json({ error: "Property not found" });
+    if (!(await loadUser(req))) {
+      return res.status(403).json({ error: "Register before opening a dispute" });
+    }
 
+    // Owners and approved authorities open disputes directly; anyone else waits for review
+    // so a stranger cannot pause a listing on their own.
+    const trusted = Boolean(await propertyAccessLevel(req, prop));
+    const status = trusted ? "open" : "pending_review";
     const result = await query(
-      `INSERT INTO disputes (property_id, opened_by_wallet, reason) VALUES ($1,$2,$3) RETURNING *`,
-      [body.propertyId, req.wallet, body.reason]
+      `INSERT INTO disputes (property_id, opened_by_wallet, reason, status)
+       VALUES ($1,$2,$3,$4) RETURNING *`,
+      [prop.id, req.wallet, body.reason, status]
     );
-    await query(
-      `UPDATE properties SET listing_paused = TRUE, updated_at = NOW() WHERE id = $1`,
-      [body.propertyId]
-    );
-    await writeAudit(req.wallet, "dispute.open", "dispute", result.rows[0].id, {});
+    if (trusted) {
+      await query(
+        `UPDATE properties SET listing_paused = TRUE, updated_at = NOW() WHERE id = $1`,
+        [prop.id]
+      );
+    }
+    await writeAudit(req.wallet, "dispute.open", "dispute", result.rows[0].id, { status });
     res.status(201).json({
       dispute: result.rows[0],
-      note: "Open disputes pause/warn listings and appear in the Authority Console.",
+      note: trusted
+        ? "Open disputes pause/warn listings and appear in the Authority Console."
+        : "Dispute submitted for administrator / authority review before it affects the listing.",
     });
   } catch (err) {
     next(err);
   }
 });
+
+const disputeReviewSchema = z.object({
+  status: z.enum(["open", "resolved", "dismissed"]),
+  note: z.string().max(1000).optional(),
+});
+
+router.patch(
+  "/disputes/:disputeId",
+  requireWallet,
+  requireRole("admin", "authority_officer", "title_officer"),
+  async (req, res, next) => {
+    try {
+      const body = disputeReviewSchema.parse(req.body);
+      const result = await query(
+        `UPDATE disputes SET status = $1 WHERE id = $2 RETURNING *`,
+        [body.status, req.params.disputeId]
+      );
+      const dispute = result.rows[0];
+      if (!dispute) return res.status(404).json({ error: "Dispute not found" });
+
+      const remaining = await query(
+        `SELECT COUNT(*)::int AS c FROM disputes WHERE property_id = $1 AND status = 'open'`,
+        [dispute.property_id]
+      );
+      const listingPaused = remaining.rows[0].c > 0;
+      await query(`UPDATE properties SET listing_paused = $1, updated_at = NOW() WHERE id = $2`, [
+        listingPaused,
+        dispute.property_id,
+      ]);
+      await writeAudit(req.wallet, "dispute.review", "dispute", dispute.id, {
+        status: body.status,
+        note: body.note,
+      });
+      res.json({ dispute, listingPaused });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 module.exports = router;

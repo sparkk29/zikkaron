@@ -24,6 +24,7 @@ contract UserVerification is Initializable, AccessControlUpgradeable, UUPSUpgrad
 
     event UserRegistered(address indexed user, bytes32 kycHash, string roleLabel);
     event UserVerified(address indexed user, address indexed verifier);
+    event VerificationReset(address indexed user);
     event FraudRiskUpdated(address indexed user, uint8 level, address indexed actor);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -42,6 +43,11 @@ contract UserVerification is Initializable, AccessControlUpgradeable, UUPSUpgrad
     function register(bytes32 kycHash, string calldata roleLabel) external {
         require(kycHash != bytes32(0), "empty hash");
         VerificationRecord storage r = records[msg.sender];
+        if (r.kycHash != kycHash && r.verified) {
+            r.verified = false;
+            r.verifiedAt = 0;
+            emit VerificationReset(msg.sender);
+        }
         r.kycHash = kycHash;
         r.roleLabel = roleLabel;
         emit UserRegistered(msg.sender, kycHash, roleLabel);

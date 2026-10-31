@@ -5,13 +5,14 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {ZikkaronRoles} from "./ZikkaronRoles.sol";
+import {PropertyOwnerGated} from "./PropertyOwnerGated.sol";
 
 /**
  * @title OwnershipTransfer
  * @notice Memorial of ownership claim transfer intents. Does NOT convey legal title or replace county recording.
  * @dev Zikkaron assists owners and authorities with memorial records. Not title. Not eviction. Not an official government system. County recording, law enforcement, and courts remain authoritative.
  */
-contract OwnershipTransfer is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
+contract OwnershipTransfer is Initializable, AccessControlUpgradeable, PropertyOwnerGated, UUPSUpgradeable {
     enum TransferStatus {
         Proposed,
         Accepted,
@@ -59,7 +60,7 @@ contract OwnershipTransfer is Initializable, AccessControlUpgradeable, UUPSUpgra
         bytes32 instrumentHash,
         string calldata instrumentNumberPlaceholder,
         bool disclaimerAccepted
-    ) external returns (uint256 transferId) {
+    ) external onlyPropertyOwner(propertyId) returns (uint256 transferId) {
         require(disclaimerAccepted, "disclaimer required");
         require(toOwner != address(0) && toOwner != msg.sender, "invalid to");
         transferId = nextTransferId++;

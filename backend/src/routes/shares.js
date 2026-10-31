@@ -4,6 +4,7 @@ const { z } = require("zod");
 const { query } = require("../db/pool");
 const { requireWallet } = require("../middleware/auth");
 const { writeAudit } = require("../services/audit");
+const { assertPropertyAccess } = require("../services/access");
 
 const router = express.Router();
 
@@ -17,13 +18,10 @@ const createSchema = z.object({
 router.post("/", requireWallet, async (req, res, next) => {
   try {
     const body = createSchema.parse(req.body);
-    const property = await query(`SELECT id, owner_wallet FROM properties WHERE id = $1`, [
-      body.propertyId,
-    ]);
-    if (!property.rows[0]) return res.status(404).json({ error: "Property not found" });
-    if (property.rows[0].owner_wallet.toLowerCase() !== req.wallet) {
-      return res.status(403).json({ error: "Only the property owner may create a share link" });
-    }
+    await assertPropertyAccess(req, body.propertyId, {
+      roles: [],
+      message: "Only the property owner may create a share link",
+    });
 
     const token = crypto.randomBytes(32).toString("hex");
     const tokenHash = crypto.createHash("sha256").update(token).digest("hex");

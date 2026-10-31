@@ -3,6 +3,7 @@ const { z } = require("zod");
 const { query } = require("../db/pool");
 const { requireWallet } = require("../middleware/auth");
 const { writeAudit } = require("../services/audit");
+const { assertPropertyAccess } = require("../services/access");
 const {
   ALLOWED_MIME_TYPES,
   decodeContent,
@@ -25,11 +26,10 @@ const uploadSchema = z.object({
 router.post("/", requireWallet, async (req, res, next) => {
   try {
     const body = uploadSchema.parse(req.body);
-    const property = await query(`SELECT * FROM properties WHERE id = $1`, [body.propertyId]);
-    if (!property.rows[0]) return res.status(404).json({ error: "Property not found" });
-    if (property.rows[0].owner_wallet.toLowerCase() !== req.wallet) {
-      return res.status(403).json({ error: "Only the property owner may upload evidence" });
-    }
+    await assertPropertyAccess(req, body.propertyId, {
+      roles: [],
+      message: "Only the property owner may upload evidence",
+    });
 
     const content = decodeContent(body.contentBase64);
     const scan = scanDocument({
@@ -89,11 +89,12 @@ router.post("/", requireWallet, async (req, res, next) => {
 
 router.get("/property/:propertyId", requireWallet, async (req, res, next) => {
   try {
+    const { property } = await assertPropertyAccess(req, req.params.propertyId);
     const result = await query(
       `SELECT id, property_id, doc_type, cid, content_hash, uploaded_by_wallet,
               filename, mime_type, byte_size, scan_status, scan_result, storage_mode, created_at
        FROM documents WHERE property_id = $1 ORDER BY created_at DESC`,
-      [req.params.propertyId]
+      [property.id]
     );
     res.json({
       documents: result.rows,

@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { BrowserProvider } from "ethers";
 import { SiweMessage } from "siwe";
-import { API_URL, CHAIN_ID, api, getSessionToken, setSessionToken } from "./api";
+import { API_URL, CHAIN_ID, api, clearLegacySessionToken } from "./api";
 
 type WalletCtx = {
   address: string | null;
@@ -12,6 +12,7 @@ type WalletCtx = {
   authMethod: string | null;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
+  refreshSession: () => Promise<void>;
 };
 
 const Ctx = createContext<WalletCtx | null>(null);
@@ -33,27 +34,19 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [authMethod, setAuthMethod] = useState<string | null>(null);
 
   const restoreSession = useCallback(async () => {
-    const token = getSessionToken();
-    if (!token) {
-      setAuthenticated(false);
-      setAuthMethod(null);
-      return;
-    }
     try {
-      const session = await api<{ wallet: string; authMethod: string }>("/api/auth/session", {
-        token,
-      });
+      const session = await api<{ wallet: string; authMethod: string }>("/api/auth/session");
       setAddress(session.wallet.toLowerCase());
       setAuthenticated(true);
       setAuthMethod(session.authMethod);
     } catch {
-      setSessionToken(null);
       setAuthenticated(false);
       setAuthMethod(null);
     }
   }, []);
 
   useEffect(() => {
+    clearLegacySessionToken();
     restoreSession();
   }, [restoreSession]);
 
@@ -112,16 +105,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       const signature = await signer.signMessage(prepared);
 
       const verified = await api<{
-        token: string;
         wallet: string;
         authMethod: string;
       }>("/api/auth/verify", {
         method: "POST",
         body: { message: prepared, signature },
-        token: null,
       });
 
-      setSessionToken(verified.token);
       setAddress(verified.wallet.toLowerCase());
       setAuthenticated(true);
       setAuthMethod(verified.authMethod);
@@ -135,14 +125,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const disconnect = useCallback(async () => {
     try {
-      const token = getSessionToken();
-      if (token) {
-        await api("/api/auth/logout", { method: "POST", token });
-      }
+      await api("/api/auth/logout", { method: "POST" });
     } catch {
       /* ignore */
     }
-    setSessionToken(null);
     setAddress(null);
     setAuthenticated(false);
     setAuthMethod(null);
@@ -163,8 +149,16 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, [address, disconnect]);
 
   const value = useMemo(
-    () => ({ address, connecting, authenticated, authMethod, connect, disconnect }),
-    [address, connecting, authenticated, authMethod, connect, disconnect]
+    () => ({
+      address,
+      connecting,
+      authenticated,
+      authMethod,
+      connect,
+      disconnect,
+      refreshSession: restoreSession,
+    }),
+    [address, connecting, authenticated, authMethod, connect, disconnect, restoreSession]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

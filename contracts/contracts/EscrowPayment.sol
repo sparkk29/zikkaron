@@ -6,13 +6,20 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {ZikkaronRoles} from "./ZikkaronRoles.sol";
+import {PropertyOwnerGated} from "./PropertyOwnerGated.sol";
 
 /**
  * @title EscrowPayment
  * @notice Testnet POL escrow for demo purchase deals. TESTNET FUNDS, NOT A CLOSING. Not licensed escrow.
  * @dev Zikkaron assists owners and authorities with memorial records. Not title. Not eviction. Not an official government system. County recording, law enforcement, and courts remain authoritative.
  */
-contract EscrowPayment is Initializable, AccessControlUpgradeable, UUPSUpgradeable, PausableUpgradeable {
+contract EscrowPayment is
+    Initializable,
+    AccessControlUpgradeable,
+    PropertyOwnerGated,
+    UUPSUpgradeable,
+    PausableUpgradeable
+{
     enum DealStatus {
         Open,
         Funded,
@@ -31,16 +38,24 @@ contract EscrowPayment is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         bool fraudWarningAcknowledged;
     }
 
+    uint64 public constant DEFAULT_REFUND_TIMEOUT = 14 days;
+    uint64 public constant MIN_REFUND_TIMEOUT = 1 days;
+    uint64 public constant MAX_REFUND_TIMEOUT = 365 days;
+
     uint256 public nextDealId;
     mapping(uint256 => Deal) public deals;
     uint256 private _status;
     uint256 private constant _NOT_ENTERED = 1;
     uint256 private constant _ENTERED = 2;
+    // Appended after the original layout; keep new state variables below this line.
+    mapping(uint256 => uint64) public fundedAt;
+    uint64 private _refundTimeout;
 
     event DealOpened(uint256 indexed dealId, uint256 indexed propertyId, address seller, address buyer, uint256 amount);
     event DealFunded(uint256 indexed dealId, address buyer, uint256 amount);
     event DealReleased(uint256 indexed dealId, address seller, uint256 amount);
     event DealRefunded(uint256 indexed dealId, address buyer, uint256 amount);
+    event RefundTimeoutUpdated(uint64 timeout);
 
     modifier nonReentrant() {
         require(_status != _ENTERED, "reentrant");
@@ -63,13 +78,24 @@ contract EscrowPayment is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         _status = _NOT_ENTERED;
     }
 
+    /// @notice Seconds after funding when the buyer may reclaim funds without an admin.
+    function refundTimeout() public view returns (uint64) {
+        return _refundTimeout == 0 ? DEFAULT_REFUND_TIMEOUT : _refundTimeout;
+    }
+
+    function setRefundTimeout(uint64 timeout) external onlyRole(ZikkaronRoles.ADMIN) {
+        require(timeout >= MIN_REFUND_TIMEOUT && timeout <= MAX_REFUND_TIMEOUT, "timeout bounds");
+        _refundTimeout = timeout;
+        emit RefundTimeoutUpdated(timeout);
+    }
+
     function openDeal(
         uint256 propertyId,
         address buyer,
         uint256 amount,
         bool disclaimerAccepted,
         bool fraudWarningAcknowledged
-    ) external whenNotPaused returns (uint256 dealId) {
+    ) external whenNotPaused onlyPropertyOwner(propertyId) returns (uint256 dealId) {
         require(disclaimerAccepted, "disclaimer required");
         require(fraudWarningAcknowledged, "fraud warning required");
         require(buyer != address(0) && buyer != msg.sender, "invalid buyer");
@@ -94,6 +120,7 @@ contract EscrowPayment is Initializable, AccessControlUpgradeable, UUPSUpgradeab
         require(msg.sender == d.buyer, "not buyer");
         require(msg.value == d.amount, "amount mismatch");
         d.status = DealStatus.Funded;
+        fundedAt[dealId] = uint64(block.timestamp);
         emit DealFunded(dealId, msg.sender, msg.value);
     }
 
@@ -107,6 +134,20 @@ contract EscrowPayment is Initializable, AccessControlUpgradeable, UUPSUpgradeab
     }
 
     function refund(uint256 dealId) external nonReentrant onlyRole(ZikkaronRoles.ADMIN) {
+        _refund(dealId);
+    }
+
+    /// @notice Buyer exit after the refund timeout, so funds never depend solely on an admin.
+    /// @dev Intentionally not gated by whenNotPaused: pausing must not trap buyer funds.
+    function claimRefund(uint256 dealId) external nonReentrant {
+        Deal storage d = deals[dealId];
+        require(msg.sender == d.buyer, "not buyer");
+        require(d.status == DealStatus.Funded, "not funded");
+        require(block.timestamp >= uint256(fundedAt[dealId]) + refundTimeout(), "refund timeout active");
+        _refund(dealId);
+    }
+
+    function _refund(uint256 dealId) private {
         Deal storage d = deals[dealId];
         require(d.status == DealStatus.Funded, "not funded");
         d.status = DealStatus.Refunded;

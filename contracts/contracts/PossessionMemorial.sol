@@ -6,13 +6,20 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {ZikkaronRoles} from "./ZikkaronRoles.sol";
+import {PropertyOwnerGated} from "./PropertyOwnerGated.sol";
 
 /**
  * @title PossessionMemorial
  * @notice Timestamped memorial hashes for occupancy incidents and notices. Not service of process. Not eviction.
  * @dev Zikkaron assists owners and authorities with memorial records. Not title. Not eviction. Not an official government system. County recording, law enforcement, and courts remain authoritative.
  */
-contract PossessionMemorial is Initializable, AccessControlUpgradeable, UUPSUpgradeable, PausableUpgradeable {
+contract PossessionMemorial is
+    Initializable,
+    AccessControlUpgradeable,
+    PropertyOwnerGated,
+    UUPSUpgradeable,
+    PausableUpgradeable
+{
     enum EventType {
         UnauthorizedOccupancyReported,
         NoticeMemorialized,
@@ -65,6 +72,13 @@ contract PossessionMemorial is Initializable, AccessControlUpgradeable, UUPSUpgr
     ) external whenNotPaused returns (uint256 eventId) {
         require(propertyId > 0, "property required");
         require(evidenceHash != bytes32(0) || bytes(noteCid).length > 0, "evidence required");
+        bool isAuthority = hasRole(ZikkaronRoles.AUTHORITY_OFFICER, msg.sender) ||
+            hasRole(ZikkaronRoles.ADMIN, msg.sender);
+        if (eventType == EventType.AgencyAckReceived) {
+            require(isAuthority, "authority only");
+        } else {
+            require(isAuthority || _claimedOwner(propertyId) == msg.sender, "not property owner");
+        }
 
         eventId = nextEventId++;
         events[eventId] = MemorialEvent({

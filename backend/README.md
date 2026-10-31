@@ -5,7 +5,8 @@ Express + PostgreSQL API for Zikkaron (US).
 ```bash
 docker compose up -d
 npm run dev -w zikkaron-backend
-npm run test -w zikkaron-backend   # requires API running
+npm run test -w zikkaron-backend       # requires API running; fails if unreachable
+npm run test:unit -w zikkaron-backend  # config guard tests, no server needed
 ```
 
 Key routes:
@@ -13,7 +14,7 @@ Key routes:
 - `GET /health` → `product: Zikkaron`, `country: US`
 - `/api/users/*` KYC register / verify
 - `/api/properties/*` memorials + simulated legal verify
-- `/api/occupancy/*` occupants, events, disputes
+- `/api/occupancy/*` occupants, events, disputes (`PATCH /disputes/:id` for admin/authority review)
 - `/api/authority/*` search, case, exports, acknowledge
 - `/api/documents/*` validated evidence ingestion and document metadata
 - `/api/shares/*` expiring owner-created memorial share links
@@ -21,8 +22,13 @@ Key routes:
 - `/api/deals/*` purchase deals
 - `/api/admin/*` queue + audit
 
-Auth: SIWE `Authorization: Bearer` sessions. The spoofable `x-wallet-address` fallback is
-disabled by default and should only be enabled for local tests.
+Auth: SIWE sessions, delivered as an httpOnly `zikkaron_session` cookie (browsers) or
+`Authorization: Bearer` (API clients). Cookie-authenticated writes must carry a trusted `Origin`
+(`CORS_ORIGIN`). The spoofable `x-wallet-address` fallback is disabled by default, should only
+be enabled for local tests, and is refused when `NODE_ENV=production`.
+
+Property-scoped reads and writes go through `src/services/access.js`; anonymous property reads
+return a public view only.
 
 For a fresh local install, configure `BOOTSTRAP_ADMIN_WALLET` and temporarily set
 `ALLOW_PRIVILEGED_BOOTSTRAP=true`. Register that wallet as `admin` once, then unset the

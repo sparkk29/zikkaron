@@ -9,6 +9,7 @@ const {
   runAssessorApnLookup,
 } = require("../services/lookupService");
 const { getLookupAdapter } = require("../services/lookupAdapters");
+const { assertPropertyAccess } = require("../services/access");
 
 const router = express.Router();
 
@@ -42,7 +43,8 @@ router.get(
   requireRole("admin", "title_officer", "authority_officer", "seller"),
   async (req, res, next) => {
     try {
-      const rows = await listLookupsForProperty(req.params.propertyId);
+      const { property } = await assertPropertyAccess(req, req.params.propertyId);
+      const rows = await listLookupsForProperty(property.id);
       res.json({ lookups: rows });
     } catch (err) {
       next(err);

@@ -69,12 +69,16 @@ The logo is a **cornerstone**: a house outline whose foundation corner is a soli
 - Agency SSO stubs (OIDC and SAML placeholders) plus a simulated sign-in for demos.
 
 **Platform**
-- Sign-In with Ethereum (SIWE) bearer sessions; header auth only when explicitly enabled for tests.
-- Privileged roles (`authority_officer`, `title_officer`, admin) require admin approval.
+- Sign-In with Ethereum (SIWE) sessions in an httpOnly, `SameSite=Strict` cookie (Bearer tokens for API clients), with an `Origin` check on cookie-authenticated writes; header auth only when explicitly enabled for tests.
+- Privileged roles (`authority_officer`, `title_officer`, admin) require admin approval; simulated agency SSO never grants or swaps a role.
+- Property occupants, timelines, disputes, legal records, documents, lookups, and deals are limited to the owner, deal parties, and approved authorities; anonymous callers get a public listing view.
+- Disputes from non-owners start as `pending_review` and only admins/authorities can open, resolve, or dismiss them.
+- The API refuses to start in production with demo flags enabled or required secrets missing.
 - County / assessor lookup adapters (`simulated` or `http`) with an admin job queue; results are assistive, never official records.
-- Upgradeable contracts (UUPS behind `ZikkaronProxy`), pausable, with inline reentrancy guards.
+- Upgradeable contracts (UUPS behind `ZikkaronProxy`), pausable, with inline reentrancy guards. Rental, transfer, escrow, and possession writes require the `PropertyRegistry` claimant; escrow buyers can reclaim funds after a refund timeout.
 - Audit log, `/health` with a database check, JSON request `/metrics`, and `x-request-id` tracing.
-- GitHub Actions CI for contracts, backend (against Postgres), and frontend build.
+- GitHub Actions CI for contracts (tests + Slither), backend (against Postgres), and frontend build.
+- Frontend CSP, `X-Frame-Options`, `Referrer-Policy`, and `Permissions-Policy` headers.
 
 ## Monorepo
 
@@ -137,7 +141,7 @@ Connect to **Polygon Amoy (80002)** and sign the SIWE message to start a session
 DEPLOYER_PRIVATE_KEY=0x... UPGRADE_ADMIN_ADDRESS=0x... npm run deploy:amoy -w zikkaron-contracts
 ```
 
-Mainnet deploy is refused unless `CONFIRM_MAINNET_DEPLOY=yes`. In production, `UPGRADE_ADMIN_ADDRESS` should be a multisig or timelock.
+Mainnet deploy is refused unless `CONFIRM_MAINNET_DEPLOY=yes`. In production, `UPGRADE_ADMIN_ADDRESS` should be a multisig or timelock: the script binds the registry-gated modules to `PropertyRegistry`, grants `ADMIN` and `DEFAULT_ADMIN_ROLE` to that address, renounces both from the deployer, and verifies the handoff. Without it the deployer key keeps upgrade authority.
 
 ## Configuration
 
@@ -145,18 +149,28 @@ Key backend variables (see [`.env.example`](.env.example) for the full list):
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `DATABASE_URL` | local `zikkaron` DB | Postgres connection |
-| `SIWE_DOMAIN` / `SIWE_URI` / `SIWE_CHAIN_ID` | `localhost` / `http://localhost:3000` / `80002` | SIWE message validation |
-| `SESSION_TTL_HOURS` | `24` | Session lifetime |
-| `ALLOW_HEADER_AUTH` | `false` | Spoofable `x-wallet-address` auth — tests only |
-| `BOOTSTRAP_ADMIN_WALLET` + `ALLOW_PRIVILEGED_BOOTSTRAP` | empty / `false` | One-time first-admin bootstrap |
-| `ALLOW_SIMULATED_SSO` | `false` | Demo agency sign-in |
+| `NODE_ENV` | `development` | `production` enables the startup guard and `Secure` session cookies |
+| `DATABASE_URL` | local `zikkaron` DB (dev only) | Postgres connection; required in production |
+| `CORS_ORIGIN` | `http://localhost:3000` | Comma-separated trusted origins for CORS and the cookie `Origin` check |
+| `TRUST_PROXY` | `false` | Express `trust proxy` setting so rate limits see real client IPs behind a load balancer |
+| `SIWE_DOMAIN` / `SIWE_URI` / `SIWE_CHAIN_ID` | `localhost` / `http://localhost:3000` / `80002` | SIWE message validation (domain, URI, and chain are all checked) |
+| `SESSION_TTL_HOURS` | `24` | Session lifetime (SIWE and simulated SSO) |
+| `SESSION_COOKIE_SECURE` | on in production | Force the `Secure` attribute on the session cookie |
+| `AUTH_CLEANUP_INTERVAL_MINUTES` | `60` | Expired nonce/session cleanup interval (`0` disables) |
+| `KYC_HASH_PEPPER` | dev fallback | HMAC-SHA256 key for KYC payload hashes; required in production |
+| `METRICS_TOKEN` | empty | `x-metrics-token` for `/metrics`; required in production |
+| `ALLOW_HEADER_AUTH` | `false` | Spoofable `x-wallet-address` auth — tests only; refused in production |
+| `BOOTSTRAP_ADMIN_WALLET` + `ALLOW_PRIVILEGED_BOOTSTRAP` | empty / `false` | One-time first-admin bootstrap; refused in production |
+| `ALLOW_SIMULATED_SSO` | `false` | Demo agency sign-in; refused in production |
 | `GOV_LOOKUP_ADAPTER` | `simulated` | `simulated` or `http` county/assessor lookups |
 | `IPFS_API_URL` / `IPFS_UPLOAD_REQUIRED` | `http://localhost:5001` / `false` | Evidence storage; fall back to hash-only when not required |
-| `MAX_DOCUMENT_BYTES` | `10485760` | Evidence upload size limit |
-| `API_RATE_LIMIT` / `AUTH_RATE_LIMIT` | `120` / `60` | Requests per window |
+| `MAX_DOCUMENT_BYTES` | `10485760` | Evidence upload size limit (also sizes the documents route body limit) |
+| `API_RATE_LIMIT` / `AUTH_RATE_LIMIT` / `NONCE_RATE_LIMIT` | `120` / `60` / `20` | Requests per minute |
+| `DISPUTE_RATE_LIMIT` | `5` | Disputes per wallet per hour |
 
-Frontend variables live in [`frontend/.env.local.example`](frontend/.env.local.example) (`NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_CHAIN_ID`, `NEXT_PUBLIC_CHAIN_NAME`).
+Frontend variables live in [`frontend/.env.local.example`](frontend/.env.local.example) (`NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_CHAIN_ID`, `NEXT_PUBLIC_CHAIN_NAME`, `NEXT_PUBLIC_MAX_DOCUMENT_BYTES`, and `NEXT_PUBLIC_ALLOW_HEADER_AUTH`, which must stay `false` outside local demos).
+
+The browser session cookie is `SameSite=Strict`, so the frontend and API must be served from the same site (for example `app.example.com` and `api.example.com`).
 
 ## Testing
 
@@ -166,7 +180,7 @@ npm run backend:test     # API tests (backend must be running with test flags)
 npm run build -w zikkaron-frontend
 ```
 
-Backend API tests expect `ALLOW_HEADER_AUTH=true`, `ALLOW_PRIVILEGED_BOOTSTRAP=true`, `ALLOW_SIMULATED_SSO=true`, and a `BOOTSTRAP_ADMIN_WALLET`. The CI workflow in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) shows the exact setup.
+Backend API tests expect `ALLOW_HEADER_AUTH=true`, `ALLOW_PRIVILEGED_BOOTSTRAP=true`, `ALLOW_SIMULATED_SSO=true`, and a `BOOTSTRAP_ADMIN_WALLET`. The suite fails (rather than silently passing) when the API at `API_URL` is unreachable; `npm run test:unit -w zikkaron-backend` runs the server-free config tests. The CI workflow in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) shows the exact setup.
 
 ## MVP walkthrough
 

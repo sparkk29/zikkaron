@@ -5,7 +5,9 @@ const {
   verifySiweAndCreateSession,
   getSessionByToken,
   revokeSession,
-  extractBearer,
+  extractSessionToken,
+  setSessionCookie,
+  clearSessionCookie,
 } = require("../services/siweAuth");
 const { writeAudit } = require("../services/audit");
 
@@ -38,6 +40,7 @@ router.post("/verify", async (req, res, next) => {
     await writeAudit(result.wallet, "auth.siwe_login", "session", result.session.id, {
       method: "siwe",
     });
+    setSessionCookie(res, result.token, result.session.expires_at);
     res.json({
       token: result.token,
       wallet: result.wallet,
@@ -54,9 +57,12 @@ router.post("/verify", async (req, res, next) => {
 
 router.get("/session", async (req, res, next) => {
   try {
-    const token = extractBearer(req);
+    const token = extractSessionToken(req);
     const session = await getSessionByToken(token);
-    if (!session) return res.status(401).json({ error: "No active session" });
+    if (!session) {
+      if (token) clearSessionCookie(res);
+      return res.status(401).json({ error: "No active session" });
+    }
     res.json({
       wallet: session.wallet_address,
       authMethod: session.auth_method,
@@ -69,12 +75,13 @@ router.get("/session", async (req, res, next) => {
 
 router.post("/logout", async (req, res, next) => {
   try {
-    const token = extractBearer(req);
+    const token = extractSessionToken(req);
     const session = await getSessionByToken(token);
     await revokeSession(token);
     if (session) {
       await writeAudit(session.wallet_address, "auth.logout", "session", session.id, {});
     }
+    clearSessionCookie(res);
     res.json({ ok: true });
   } catch (err) {
     next(err);

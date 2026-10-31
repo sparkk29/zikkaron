@@ -5,6 +5,8 @@ import { useParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useWallet } from "@/lib/wallet";
 
+const MAX_DOCUMENT_BYTES = Number(process.env.NEXT_PUBLIC_MAX_DOCUMENT_BYTES || 10 * 1024 * 1024);
+
 export default function PropertyDetailPage() {
   const params = useParams();
   const id = String(params.id);
@@ -15,6 +17,7 @@ export default function PropertyDetailPage() {
   const [instrument, setInstrument] = useState("");
   const [matchConfirmed, setMatchConfirmed] = useState(true);
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
+  const [fileInputKey, setFileInputKey] = useState(0);
   const [evidenceType, setEvidenceType] = useState("incident_evidence");
   const [sharePurpose, setSharePurpose] = useState("");
   const [shareUrl, setShareUrl] = useState("");
@@ -57,6 +60,16 @@ export default function PropertyDetailPage() {
       setMsg("Choose a PDF, PNG, JPEG, text, or JSON file first.");
       return;
     }
+    if (evidenceFile.size > MAX_DOCUMENT_BYTES) {
+      setMsg(
+        `File is ${(evidenceFile.size / 1024 / 1024).toFixed(1)} MB; the limit is ${(
+          MAX_DOCUMENT_BYTES /
+          1024 /
+          1024
+        ).toFixed(1)} MB.`
+      );
+      return;
+    }
     try {
       const contentBase64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -79,6 +92,7 @@ export default function PropertyDetailPage() {
         `Evidence stored as ${result.document.storage_mode}. SHA-256: ${result.document.content_hash}`
       );
       setEvidenceFile(null);
+      setFileInputKey((key) => key + 1);
       await load();
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Upload failed");
@@ -120,7 +134,9 @@ export default function PropertyDetailPage() {
         {p.ownerFraudRisk && p.ownerFraudRisk !== "low" && (
           <span className="tag">owner risk {p.ownerFraudRisk}</span>
         )}
+        {data.openDisputeCount > 0 && <span className="tag">open disputes</span>}
       </p>
+      {data.access === "public" && <div className="warn-box">{data.notice}</div>}
 
       <div className="panel">
         <h3>Authorized occupants</h3>
@@ -167,6 +183,7 @@ export default function PropertyDetailPage() {
           </select>
           <label className="label">File</label>
           <input
+            key={fileInputKey}
             type="file"
             accept=".pdf,.png,.jpg,.jpeg,.txt,.json"
             onChange={(e) => setEvidenceFile(e.target.files?.[0] || null)}

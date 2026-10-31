@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: zikkaron
       POSTGRES_DB: zikkaron
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - zikkaron_pg:/var/lib/postgresql/data
       - ./backend/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
@@ -21,8 +21,8 @@ services:
     image: ipfs/kubo:v0.29.0
     container_name: zikkaron-ipfs
     ports:
-      - "5001:5001"
-      - "8080:8080"
+      - "127.0.0.1:5001:5001"
+      - "127.0.0.1:8080:8080"
     volumes:
       - zikkaron_ipfs:/data/ipfs
 

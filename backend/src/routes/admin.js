@@ -1,6 +1,8 @@
 const express = require("express");
 const { query } = require("../db/pool");
 const { requireWallet, requireRole } = require("../middleware/auth");
+const { writeAudit } = require("../services/audit");
+const { purgeExpiredAuthRecords } = require("../services/siweAuth");
 
 const router = express.Router();
 
@@ -64,9 +66,15 @@ router.post("/retention/purge", requireWallet, requireRole("admin"), async (req,
        RETURNING id`,
       [req.wallet]
     );
+    const auth = await purgeExpiredAuthRecords();
+    await writeAudit(req.wallet, "admin.retention_purge", "authority_case_export", null, {
+      purgedCount: result.rowCount,
+      ...auth,
+    });
     res.json({
       purgedCount: result.rowCount,
       exportIds: result.rows.map((row) => row.id),
+      auth,
       note: "Expired case-pack payloads were redacted; audit metadata remains.",
     });
   } catch (err) {

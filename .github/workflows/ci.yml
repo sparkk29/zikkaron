@@ -18,6 +18,23 @@ jobs:
       - run: npm run contracts:compile
       - run: npm run contracts:test
 
+  contracts-slither:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run contracts:compile
+      - uses: crytic/slither-action@v0.4.0
+        with:
+          target: contracts
+          ignore-compile: true
+          fail-on: medium
+          slither-args: --exclude-dependencies --filter-paths node_modules
+
   backend:
     runs-on: ubuntu-latest
     services:

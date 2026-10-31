@@ -14,8 +14,14 @@ const registerSchema = z.object({
   agencyName: z.string().optional(),
   agencyUnit: z.string().optional(),
   badgeRefPlaceholder: z.string().optional(),
-  agencyId: z.string().uuid().optional(),
 });
+
+const DEV_KYC_HASH_PEPPER = "zikkaron-local-dev-pepper";
+
+function hashKycPayload(payload) {
+  const pepper = process.env.KYC_HASH_PEPPER || DEV_KYC_HASH_PEPPER;
+  return crypto.createHmac("sha256", pepper).update(payload).digest("hex");
+}
 
 router.post("/register", requireWallet, async (req, res, next) => {
   try {
@@ -46,9 +52,7 @@ router.post("/register", requireWallet, async (req, res, next) => {
       }
     }
 
-    const kycHash = body.kycPayload
-      ? crypto.createHash("sha256").update(body.kycPayload).digest("hex")
-      : null;
+    const kycHash = body.kycPayload ? hashKycPayload(body.kycPayload) : null;
 
     const result = await query(
       `INSERT INTO users (
@@ -98,7 +102,7 @@ router.post("/register", requireWallet, async (req, res, next) => {
         body.agencyName || null,
         body.agencyUnit || null,
         body.badgeRefPlaceholder || null,
-        body.agencyId || null,
+        null,
         body.role === "admin" ? true : !privilegedRoles.includes(body.role),
         isAdminBootstrap ? req.wallet : null,
         isAdminBootstrap ? "bootstrap" : "self_signup",
@@ -132,10 +136,13 @@ router.post("/roles/:wallet", requireWallet, requireRole("admin"), async (req, r
 
     const result = await query(
       `UPDATE users
-       SET role = $1,
+       SET role = $1::user_role,
            agency_name = COALESCE($2, agency_name),
            agency_unit = COALESCE($3, agency_unit),
-           agency_id = COALESCE($4, agency_id),
+           agency_id = CASE
+             WHEN $7::boolean THEN COALESCE($4, CASE WHEN role = $1::user_role THEN agency_id END)
+             ELSE NULL
+           END,
            role_approved = TRUE,
            role_approved_by = $5,
            role_approved_at = NOW(),
@@ -150,6 +157,7 @@ router.post("/roles/:wallet", requireWallet, requireRole("admin"), async (req, r
         body.agencyId || null,
         req.wallet,
         wallet,
+        ["authority_officer", "title_officer"].includes(body.role),
       ]
     );
     if (!result.rows[0]) return res.status(404).json({ error: "User not found" });

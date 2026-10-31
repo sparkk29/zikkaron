@@ -5,13 +5,14 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {ZikkaronRoles} from "./ZikkaronRoles.sol";
+import {PropertyOwnerGated} from "./PropertyOwnerGated.sol";
 
 /**
  * @title RentalAgreement
  * @notice Memorial of rental agreement hashes and authorized occupancy claims. Not a court filing.
  * @dev Zikkaron assists owners and authorities with memorial records. Not title. Not eviction. Not an official government system. County recording, law enforcement, and courts remain authoritative.
  */
-contract RentalAgreement is Initializable, AccessControlUpgradeable, UUPSUpgradeable {
+contract RentalAgreement is Initializable, AccessControlUpgradeable, PropertyOwnerGated, UUPSUpgradeable {
     enum AgreementStatus {
         Active,
         Ended,
@@ -60,7 +61,7 @@ contract RentalAgreement is Initializable, AccessControlUpgradeable, UUPSUpgrade
         bytes32 leaseCidHash,
         uint64 startAt,
         uint64 endAt
-    ) external returns (uint256 agreementId) {
+    ) external onlyPropertyOwner(propertyId) returns (uint256 agreementId) {
         require(tenant != address(0), "tenant");
         require(leaseCidHash != bytes32(0), "lease hash");
         require(endAt > startAt, "dates");

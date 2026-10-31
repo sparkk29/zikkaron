@@ -4,7 +4,7 @@ const { z } = require("zod");
 const { query } = require("../db/pool");
 const { requireWallet, requireRole } = require("../middleware/auth");
 const { writeAudit, enqueueGovJob } = require("../services/audit");
-const { mapProperty } = require("./properties");
+const { mapProperty } = require("../services/properties");
 
 const router = express.Router();
 
@@ -34,11 +34,11 @@ router.get("/search", requireWallet, requireRole("authority_officer", "admin"), 
        LEFT JOIN users u ON LOWER(u.wallet_address) = LOWER(p.owner_wallet)
        WHERE p.id::text = $1
           OR LOWER(p.apn) = LOWER($1)
-          OR LOWER(p.address_line1) LIKE LOWER($2)
-          OR LOWER(p.city || ' ' || p.state || ' ' || p.zip) LIKE LOWER($2)
+          OR LOWER(p.address_line1) LIKE LOWER($2) ESCAPE '\\'
+          OR LOWER(p.city || ' ' || p.state || ' ' || p.zip) LIKE LOWER($2) ESCAPE '\\'
        ORDER BY p.created_at DESC
        LIMIT 25`,
-      [q, `%${q}%`]
+      [q, `%${escapeLike(q)}%`]
     );
 
     res.json({
@@ -392,7 +392,7 @@ router.post(
 async function buildCasePack(propertyId) {
   const propResult = await query(
     `SELECT p.*, u.fraud_risk_level AS owner_fraud_risk, u.kyc_verified AS owner_kyc_verified,
-            u.kyc_hash AS owner_kyc_hash, u.display_name AS owner_display_name, u.role AS owner_role
+            u.display_name AS owner_display_name, u.role AS owner_role
      FROM properties p
      LEFT JOIN users u ON LOWER(u.wallet_address) = LOWER(p.owner_wallet)
      WHERE p.id::text = $1`,
@@ -442,7 +442,6 @@ async function buildCasePack(propertyId) {
       wallet: prop.owner_wallet,
       displayName: prop.owner_display_name,
       kycVerified: prop.owner_kyc_verified,
-      kycHash: prop.owner_kyc_hash,
       fraudRiskLevel: prop.owner_fraud_risk,
     },
     authorizedOccupants: occupants.rows,
@@ -453,6 +452,10 @@ async function buildCasePack(propertyId) {
     priorExports: exports_.rows,
     documents: documents.rows,
   };
+}
+
+function escapeLike(value) {
+  return value.replace(/[\\%_]/g, "\\$&");
 }
 
 function resolveAgencyForActor(req, requestedAgencyId) {

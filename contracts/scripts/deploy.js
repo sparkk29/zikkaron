@@ -1,8 +1,10 @@
 const { ethers, network } = require("hardhat");
+const { deployZikkaron } = require("./deployZikkaron");
 
 /**
  * Deploy Zikkaron UUPS modules to the selected network.
  * Polygon Amoy (80002) first. Mainnet requires CONFIRM_MAINNET_DEPLOY=yes.
+ * Set UPGRADE_ADMIN_ADDRESS to a multisig/timelock: the deployer then renounces all admin roles.
  */
 async function main() {
   if (network.name === "polygon" && process.env.CONFIRM_MAINNET_DEPLOY !== "yes") {
@@ -12,50 +14,15 @@ async function main() {
   const [deployer] = await ethers.getSigners();
   console.log("Deploying Zikkaron with:", deployer.address);
 
-  async function deploy(name) {
-    const implementationFactory = await ethers.getContractFactory(name);
-    const implementation = await implementationFactory.deploy();
-    await implementation.waitForDeployment();
-    const initializationData = implementationFactory.interface.encodeFunctionData(
-      "initialize",
-      [deployer.address]
-    );
-
-    const proxyFactory = await ethers.getContractFactory("ZikkaronProxy");
-    const proxy = await proxyFactory.deploy(
-      await implementation.getAddress(),
-      initializationData
-    );
-    await proxy.waitForDeployment();
-    const proxyAddress = await proxy.getAddress();
-    const proxied = await ethers.getContractAt(name, proxyAddress);
-
-    const upgradeAdmin = process.env.UPGRADE_ADMIN_ADDRESS || deployer.address;
-    if (upgradeAdmin.toLowerCase() !== deployer.address.toLowerCase()) {
-      const adminRole = ethers.id("ADMIN");
-      await (await proxied.grantRole(adminRole, upgradeAdmin)).wait();
-      console.log(`${name}: upgrade admin granted to ${upgradeAdmin}`);
-    }
-
-    console.log(
-      `${name}: proxy=${proxyAddress} implementation=${await implementation.getAddress()}`
-    );
-    return {
-      proxy: proxyAddress,
-      implementation: await implementation.getAddress(),
-      upgradeAdmin,
-    };
+  const upgradeAdmin = process.env.UPGRADE_ADMIN_ADDRESS;
+  if (upgradeAdmin && !ethers.isAddress(upgradeAdmin)) {
+    throw new Error("UPGRADE_ADMIN_ADDRESS is not a valid address");
+  }
+  if (!upgradeAdmin) {
+    console.warn("UPGRADE_ADMIN_ADDRESS not set: the deployer key keeps upgrade authority.");
   }
 
-  const addresses = {
-    UserVerification: await deploy("UserVerification"),
-    PropertyRegistry: await deploy("PropertyRegistry"),
-    PossessionMemorial: await deploy("PossessionMemorial"),
-    EscrowPayment: await deploy("EscrowPayment"),
-    OwnershipTransfer: await deploy("OwnershipTransfer"),
-    RentalAgreement: await deploy("RentalAgreement"),
-  };
-
+  const { addresses } = await deployZikkaron({ deployer, upgradeAdmin, log: console.log });
   console.log(JSON.stringify(addresses, null, 2));
 }
 

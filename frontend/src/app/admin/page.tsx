@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { isAddress } from "ethers";
 import { api } from "@/lib/api";
 import { useWallet } from "@/lib/wallet";
 
@@ -36,8 +37,15 @@ export default function AdminPage() {
 
   async function verify() {
     if (!address) return connect();
+    if (!isAddress(verifyWallet)) {
+      setMsg("Enter a valid 0x wallet address to verify.");
+      return;
+    }
     try {
-      await api(`/api/users/verify/${verifyWallet}`, { method: "POST", wallet: address });
+      await api(`/api/users/verify/${encodeURIComponent(verifyWallet)}`, {
+        method: "POST",
+        wallet: address,
+      });
       setMsg(`Verified ${verifyWallet}`);
       await load();
     } catch (err) {

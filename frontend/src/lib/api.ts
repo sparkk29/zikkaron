@@ -1,34 +1,30 @@
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 export const CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID || 80002);
 
-const SESSION_KEY = "zikkaron_session_token";
+// Spoofable x-wallet-address auth; only for local demos against an API with ALLOW_HEADER_AUTH=true.
+const ALLOW_HEADER_AUTH = process.env.NEXT_PUBLIC_ALLOW_HEADER_AUTH === "true";
 
-export function getSessionToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(SESSION_KEY);
-}
+const LEGACY_SESSION_KEY = "zikkaron_session_token";
 
-export function setSessionToken(token: string | null) {
+/** Sessions now live in an httpOnly cookie; drop any token persisted by older builds. */
+export function clearLegacySessionToken() {
   if (typeof window === "undefined") return;
-  if (token) window.localStorage.setItem(SESSION_KEY, token);
-  else window.localStorage.removeItem(SESSION_KEY);
+  window.localStorage.removeItem(LEGACY_SESSION_KEY);
 }
 
 export async function api<T = unknown>(
   path: string,
-  opts: { method?: string; wallet?: string | null; body?: unknown; token?: string | null } = {}
+  opts: { method?: string; wallet?: string | null; body?: unknown } = {}
 ): Promise<T> {
-  const token = opts.token !== undefined ? opts.token : getSessionToken();
   const res = await fetch(`${API_URL}${path}`, {
     method: opts.method || "GET",
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      // Demo fallback when ALLOW_HEADER_AUTH=true on API (tests / local only)
-      ...(!token && opts.wallet ? { "x-wallet-address": opts.wallet } : {}),
+      ...(ALLOW_HEADER_AUTH && opts.wallet ? { "x-wallet-address": opts.wallet } : {}),
     },
     body: opts.body ? JSON.stringify(opts.body) : undefined,
     cache: "no-store",
+    credentials: "include",
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {

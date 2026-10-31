@@ -19,7 +19,11 @@
 - ~~Agency SSO (SAML/OIDC) stubs~~ (Phase 2 shipped); live IdP still needs MoU.
 - ~~County recorder / assessor API adapter interface~~ (Phase 3 shipped); wire partner middleware URLs via `GOV_LOOKUP_ADAPTER=http`.
 - On-chain `AuthorityAck` events (optional; MVP is off-chain).
-- Production UUPS proxy deploys + formal audit.
+- ~~UUPS proxy deploys with multisig admin handoff~~ (shipped; deployer renounces roles when
+  `UPGRADE_ADMIN_ADDRESS` is set). Formal audit and storage-layout validation
+  (`@openzeppelin/hardhat-upgrades`) still pending.
+- Nonce-based CSP for the frontend (drop `'unsafe-inline'` scripts).
+- Proof-of-ownership for APN claims (county record match before a memorial is accepted).
 - Real IPFS pinning SLAs; document malware scanning.
 
 ## Explicit non-goals unless separately authorized

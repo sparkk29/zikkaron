@@ -3,7 +3,12 @@ const { z } = require("zod");
 const { query } = require("../db/pool");
 const { requireWallet } = require("../middleware/auth");
 const { writeAudit } = require("../services/audit");
-const { getProperty } = require("./properties");
+const {
+  PRIVILEGED_ROLES,
+  assertPropertyAccess,
+  hasApprovedRole,
+  loadUser,
+} = require("../services/access");
 
 const router = express.Router();
 
@@ -18,11 +23,10 @@ const dealSchema = z.object({
 router.post("/", requireWallet, async (req, res, next) => {
   try {
     const body = dealSchema.parse(req.body);
-    const prop = await getProperty(body.propertyId);
-    if (!prop) return res.status(404).json({ error: "Property not found" });
-    if (prop.owner_wallet.toLowerCase() !== req.wallet) {
-      return res.status(403).json({ error: "Seller must be property owner" });
-    }
+    const { property: prop } = await assertPropertyAccess(req, body.propertyId, {
+      roles: [],
+      message: "Seller must be property owner",
+    });
 
     const seller = await query(
       `SELECT * FROM users WHERE LOWER(wallet_address) = $1`,
@@ -70,11 +74,15 @@ router.post("/", requireWallet, async (req, res, next) => {
   }
 });
 
-router.get("/property/:propertyId", async (req, res, next) => {
+router.get("/property/:propertyId", requireWallet, async (req, res, next) => {
   try {
+    const privileged = hasApprovedRole(await loadUser(req), PRIVILEGED_ROLES);
     const result = await query(
-      `SELECT * FROM purchase_deals WHERE property_id = $1 ORDER BY created_at DESC`,
-      [req.params.propertyId]
+      `SELECT * FROM purchase_deals
+       WHERE property_id = $1
+         AND ($2 OR LOWER(seller_wallet) = $3 OR LOWER(buyer_wallet) = $3)
+       ORDER BY created_at DESC`,
+      [req.params.propertyId, privileged, req.wallet]
     );
     res.json({ deals: result.rows });
   } catch (err) {

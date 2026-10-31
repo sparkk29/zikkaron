@@ -7,6 +7,7 @@ const {
   simulateAgencyLogin,
 } = require("../services/agencySso");
 const { requireWallet } = require("../middleware/auth");
+const { setSessionCookie } = require("../services/siweAuth");
 
 const router = express.Router();
 
@@ -98,6 +99,7 @@ router.post("/simulate", requireWallet, async (req, res, next) => {
       });
     }
     const result = await simulateAgencyLogin(body);
+    setSessionCookie(res, result.token, result.expiresAt);
     res.status(201).json(result);
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });

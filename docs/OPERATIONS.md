@@ -11,13 +11,27 @@ npm run frontend:dev
 
 Docker Compose remains the preferred shared local setup for PostgreSQL and IPFS.
 
+## Startup guard
+
+With `NODE_ENV=production` the API refuses to start if `ALLOW_HEADER_AUTH`,
+`ALLOW_SIMULATED_SSO`, or `ALLOW_PRIVILEGED_BOOTSTRAP` is `true`, or if `DATABASE_URL`,
+`METRICS_TOKEN`, or `KYC_HASH_PEPPER` is missing (`backend/src/config.js`). Behind a load
+balancer, set `TRUST_PROXY` so rate limits key on the real client IP.
+
 ## Health and metrics
 
-- `GET /health` checks PostgreSQL and returns `503` when the database is unavailable.
+- `GET /health` checks PostgreSQL and returns `503` when the database is unavailable. It does
+  not reveal auth or adapter configuration.
 - Every response carries an `x-request-id`; clients may provide a safe correlation ID.
-- `GET /metrics` exposes in-process request counts and latency. Set `METRICS_TOKEN` to protect
-  it outside local development.
+- `GET /metrics` exposes in-process request counts and latency. `METRICS_TOKEN` (sent as
+  `x-metrics-token`, compared in constant time) is required in production.
 - Set `LOG_REQUESTS=true` for one-line JSON request logs.
+
+## Auth record cleanup
+
+Expired nonces and sessions that expired or were revoked over a day ago are deleted every
+`AUTH_CLEANUP_INTERVAL_MINUTES` (default 60) and on `POST /api/admin/retention/purge`, which
+also writes an `admin.retention_purge` audit entry.
 
 Metrics are intentionally process-local in the MVP. Production should export them to a managed
 monitoring system.
@@ -32,8 +46,12 @@ and drains the PostgreSQL pool.
 `.github/workflows/ci.yml` runs:
 
 - Solidity compile and tests
-- PostgreSQL migration and backend integration tests
+- Slither static analysis (fails on medium or higher findings)
+- PostgreSQL migration, backend config unit tests, and backend integration tests (the suite fails
+  if the API is unreachable)
 - Next.js production build
+
+Docker Compose binds PostgreSQL, the IPFS API, and the IPFS gateway to `127.0.0.1` only.
 
 CI enables demo-only flags explicitly. Shared or production environments must keep header
 authentication, privileged bootstrap, and simulated SSO disabled.

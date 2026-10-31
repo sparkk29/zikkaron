@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const { query } = require("../db/pool");
 const { writeAudit, enqueueGovJob } = require("./audit");
+const { createSession } = require("./siweAuth");
 
 /**
  * Agency SSO stubs — OIDC/SAML adapters for future MoUs.
@@ -107,16 +108,13 @@ async function simulateAgencyLogin({
     throw Object.assign(new Error("Valid wallet required to bind demo session"), { status: 400 });
   }
 
-  // Ensure authority_officer user linked to agency
-  const userUpsert = await query(
-    `INSERT INTO users (wallet_address, role, display_name, agency_id, agency_name, badge_ref_placeholder)
-     VALUES ($1, 'authority_officer', $2, $3, $4, $5)
-     ON CONFLICT (wallet_address) DO UPDATE SET
-       role = 'authority_officer',
-       display_name = COALESCE(EXCLUDED.display_name, users.display_name),
-       agency_id = EXCLUDED.agency_id,
-       agency_name = EXCLUDED.agency_name,
-       updated_at = NOW()
+  // New wallets become pending officers (role_approved defaults to FALSE). Existing users
+  // keep their role and approval; SSO must never grant or swap a role.
+  const inserted = await query(
+    `INSERT INTO users (wallet_address, role, display_name, agency_id, agency_name, badge_ref_placeholder,
+                        role_approval_source)
+     VALUES ($1, 'authority_officer', $2, $3, $4, $5, 'agency_sso_stub')
+     ON CONFLICT (wallet_address) DO NOTHING
      RETURNING *`,
     [
       wallet,
@@ -126,16 +124,32 @@ async function simulateAgencyLogin({
       subjectPlaceholder || "SSO-SUB-PLACEHOLDER",
     ]
   );
+  let user = inserted.rows[0];
+  if (!user) {
+    const existing = await query(`SELECT * FROM users WHERE LOWER(wallet_address) = $1`, [wallet]);
+    user = existing.rows[0];
+    if (user.role !== "authority_officer") {
+      throw Object.assign(
+        new Error(
+          `Wallet is already registered as ${user.role}; an administrator must assign authority_officer`
+        ),
+        { status: 409 }
+      );
+    }
+    if (user.agency_id && user.agency_id !== agencyId) {
+      throw Object.assign(new Error("Officer is linked to a different agency"), { status: 403 });
+    }
+    if (!user.agency_id) {
+      const linked = await query(
+        `UPDATE users SET agency_id = $1, agency_name = $2, updated_at = NOW()
+         WHERE id = $3 RETURNING *`,
+        [agencyId, agency.name, user.id]
+      );
+      user = linked.rows[0];
+    }
+  }
 
-  const token = crypto.randomBytes(32).toString("hex");
-  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  const session = await query(
-    `INSERT INTO sessions (wallet_address, token_hash, auth_method, expires_at)
-     VALUES ($1, $2, 'agency_sso_stub', $3)
-     RETURNING id, wallet_address, auth_method, expires_at`,
-    [wallet, tokenHash, expiresAt]
-  );
+  const { token, session } = await createSession(wallet, "agency_sso_stub");
 
   const login = await query(
     `INSERT INTO agency_sso_logins
@@ -150,7 +164,7 @@ async function simulateAgencyLogin({
       emailPlaceholder || null,
       displayName || null,
       wallet,
-      session.rows[0].id,
+      session.id,
       {
         simulated: true,
         agencyType: agency.type,
@@ -172,11 +186,12 @@ async function simulateAgencyLogin({
   return {
     token,
     wallet,
-    expiresAt: session.rows[0].expires_at,
+    expiresAt: session.expires_at,
     authMethod: "agency_sso_stub",
     user: {
-      id: userUpsert.rows[0].id,
-      role: userUpsert.rows[0].role,
+      id: user.id,
+      role: user.role,
+      roleApproved: user.role_approved,
       agencyId,
       agencyName: agency.name,
     },
